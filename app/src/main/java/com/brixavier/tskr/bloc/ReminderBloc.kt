@@ -152,6 +152,7 @@ class ReminderBloc(
                 reminderScheduler.scheduleAlarms(updatedReminder)
             } else {
                 reminderScheduler.cancelAlarms(updatedReminder)
+                cancelNotification(id)
                 // If task was completed (active -> inactive), check streak
                 checkAndIncrementStreak()
             }
@@ -203,9 +204,15 @@ class ReminderBloc(
 
             // 2. Cancel scheduled AlarmManager alarms
             reminderScheduler.cancelAlarms(reminder)
+            cancelNotification(id)
             
             updateWidget()
         }
+    }
+
+    private fun cancelNotification(id: String) {
+        val notificationManager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        notificationManager.cancel(id.hashCode())
     }
 
     private suspend fun handleUpdateReminder(reminder: Reminder) {

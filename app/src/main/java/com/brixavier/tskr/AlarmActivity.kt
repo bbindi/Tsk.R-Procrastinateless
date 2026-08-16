@@ -1,6 +1,7 @@
 package com.brixavier.tskr
 
 import android.app.KeyguardManager
+import android.app.NotificationManager
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.Ringtone
@@ -62,6 +63,7 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     
     private val database by lazy { ReminderDatabase.getDatabase(this) }
     private val scheduler by lazy { ReminderScheduler(this) }
+    private val notificationManager by lazy { getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager }
     private val scope = CoroutineScope(Dispatchers.IO)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -103,6 +105,7 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                             scope.launch {
                                 database.reminderDao().update(it.copy(isActive = false))
                                 scheduler.cancelAlarms(it)
+                                cancelNotification(it.id)
                                 finish()
                             }
                         } ?: dismissAlarm()
@@ -113,11 +116,16 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         } ?: dismissAlarm()
                     },
                     onDismiss = {
+                        reminder?.let { cancelNotification(it.id) }
                         dismissAlarm()
                     }
                 )
             }
         }
+    }
+
+    private fun cancelNotification(reminderId: String) {
+        notificationManager.cancel(reminderId.hashCode())
     }
 
     override fun onInit(status: Int) {
@@ -135,6 +143,7 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             val updated = reminder.copy(date = parts[0], time = parts[1])
             database.reminderDao().update(updated)
             scheduler.scheduleAlarms(updated)
+            cancelNotification(reminder.id)
             finish()
         }
     }

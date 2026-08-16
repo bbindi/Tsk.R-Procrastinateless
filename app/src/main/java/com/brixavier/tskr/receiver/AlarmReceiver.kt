@@ -78,8 +78,11 @@ class AlarmReceiver : BroadcastReceiver() {
         }
         notificationManager.createNotificationChannel(channel)
 
-        // Tap notification opens MainActivity
-        val openAppIntent = Intent(context, MainActivity::class.java).apply {
+        // Tap notification opens AlarmActivity (Mission Mode) for the correct reminder
+        val openAppIntent = Intent(context, AlarmActivity::class.java).apply {
+            putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
+            putExtra(ReminderScheduler.EXTRA_REMINDER_TITLE, title)
+            putExtra(ReminderScheduler.EXTRA_ALARM_STAGE, stage)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
         val pendingIntent = PendingIntent.getActivity(
@@ -103,13 +106,22 @@ class AlarmReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // Personality-driven messaging
+        val emoji = when (stage) {
+            ReminderScheduler.STAGE_7_DAYS -> "⚠️"
+            ReminderScheduler.STAGE_24_HOURS -> "🚨"
+            else -> "🎯"
+        }
+        val notificationTitle = "$emoji $title"
+        
         // Android standard application launcher icon is used as the small icon
         val smallIconResId = android.R.drawable.ic_lock_idle_alarm
 
         val notificationBuilder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(smallIconResId)
-            .setContentTitle(title)
+            .setContentTitle(notificationTitle)
             .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVibrate(longArrayOf(0, 500, 200, 500))
