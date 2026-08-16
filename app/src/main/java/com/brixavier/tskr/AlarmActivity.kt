@@ -20,8 +20,10 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.*
@@ -244,23 +246,24 @@ fun AlarmScreen(
     onSnooze: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    // Elegant pulsing animation for warning icon
+    // Elegant pulsing animation for warning icon/reward card
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.95f,
-        targetValue = 1.1f,
+        initialValue = 0.98f,
+        targetValue = 1.05f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = FastOutSlowInEasing),
+            animation = tween(1200, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "pulse"
     )
 
+    // Atmospheric Material You glow
     val ambientColor by infiniteTransition.animateColor(
-        initialValue = MaterialTheme.colorScheme.background,
-        targetValue = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+        initialValue = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
+        targetValue = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f),
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
+            animation = tween(3000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "ambientColor"
@@ -284,141 +287,175 @@ fun AlarmScreen(
         else -> "🚀 Complete Task"
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(ambientColor)
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        // Mission Header
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(top = 48.dp)
-        ) {
-            Text(
-                text = screenTitle,
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.sp
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Text(
-                text = title,
-                fontSize = 36.sp,
-                fontWeight = FontWeight.Black,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                lineHeight = 44.sp
-            )
-            
-            if (reminder != null) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "⏰ ${getRelativeTimeSpan(reminder.date, reminder.time)}",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White.copy(alpha = 0.7f)
-                )
-            }
-        }
+        // Atmospheric Glow Layer
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(ambientColor)
+        )
 
-        // Body Text / Reward Card
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Readability Scrim & Content Layer
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.85f))
+                .padding(horizontal = 24.dp, vertical = 32.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // 1. Mission Header
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = screenTitle,
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 48.sp
+                )
+                
+                if (reminder != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                        shape = CircleShape
+                    ) {
+                        Text(
+                            text = "⏰ ${getRelativeTimeSpan(reminder.date, reminder.time)}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            // 2. Body Text
             Text(
                 text = bodyText,
                 style = MaterialTheme.typography.bodyLarge,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 16.dp)
+                modifier = Modifier.padding(horizontal = 8.dp)
             )
-            
-            Spacer(modifier = Modifier.height(24.dp))
 
+            // 3. Reward Card (Pulsing)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .scale(pulseScale),
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = Color.White.copy(alpha = 0.1f)
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 ),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
             ) {
                 Row(
                     modifier = Modifier.padding(24.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(MaterialTheme.colorScheme.tertiaryContainer, CircleShape),
-                        contentAlignment = Alignment.Center
+                    Surface(
+                        modifier = Modifier.size(56.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = CircleShape
                     ) {
-                        Icon(Icons.Default.Stars, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Stars, 
+                                contentDescription = null, 
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
                     }
                     Column {
                         Text(
-                            text = "Potential Reward",
+                            text = "POTENTIAL REWARD",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.5f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
                         )
                         Text(
                             text = "Peace of mind 😌",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
-        }
 
-        // Personality Quote & Controls
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = "\"$quote\"",
-                fontSize = 18.sp,
-                color = MaterialTheme.colorScheme.primary,
-                textAlign = TextAlign.Center,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
+            Spacer(modifier = Modifier.weight(1f))
 
-            Spacer(modifier = Modifier.height(40.dp))
-
-            Button(
-                onClick = if (alarmStage == ReminderScheduler.STAGE_DUE_NOW) onStartNow else onDismiss,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
+            // 4. Personality Quote & Controls
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(primaryButtonText.uppercase(), fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            }
+                Text(
+                    text = "\"$quote\"",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                    textAlign = TextAlign.Center,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
 
-            if (alarmStage == ReminderScheduler.STAGE_DUE_NOW) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = if (alarmStage == ReminderScheduler.STAGE_DUE_NOW) onStartNow else onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp)
+                    ) {
+                        Text(primaryButtonText.uppercase(), fontWeight = FontWeight.Black, fontSize = 18.sp, letterSpacing = 1.sp)
+                    }
 
-                TextButton(
-                    onClick = onSnooze,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "😅 Give Me 5 Minutes",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    if (alarmStage == ReminderScheduler.STAGE_DUE_NOW) {
+                        OutlinedButton(
+                            onClick = onSnooze,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                        ) {
+                            Text(
+                                text = "😅 Give Me 5 Minutes",
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
         }
