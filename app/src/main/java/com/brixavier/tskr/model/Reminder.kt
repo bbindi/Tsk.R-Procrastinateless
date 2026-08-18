@@ -21,8 +21,42 @@ data class Reminder(
     val date: String,
     val time: String,
     val isActive: Boolean = true,
-    val priority: String = "CASUAL",
+    val priority: String = PRIORITY_NORMAL,
     val notes: String = "",
     val subTasksRaw: String = "",
     val motivation: String = ""
-)
+) {
+    companion object {
+        const val PRIORITY_IMPORTANT = "IMPORTANT"
+        const val PRIORITY_NORMAL = "NORMAL"
+        
+        // Legacy values for mapping
+        const val PRIORITY_CRITICAL = "CRITICAL"
+        const val PRIORITY_HIGH = "HIGH"
+        const val PRIORITY_CASUAL = "CASUAL"
+
+        fun isImportant(priority: String?): Boolean {
+            return priority == PRIORITY_IMPORTANT || 
+                   priority == PRIORITY_CRITICAL || 
+                   priority == PRIORITY_HIGH
+        }
+    }
+
+    fun isImportant(): Boolean = isImportant(priority)
+
+    fun isNormal(): Boolean {
+        return !isImportant()
+    }
+
+    fun getPriorityLabel(): String {
+        return if (isImportant()) "IMPORTANT" else "NORMAL"
+    }
+
+    fun getPriorityEmoji(): String {
+        return if (isImportant()) "🔥" else "🙂"
+    }
+
+    fun getPriorityDisplayName(): String {
+        return "${getPriorityEmoji()} ${getPriorityLabel().lowercase().replaceFirstChar { it.uppercase() }}"
+    }
+}

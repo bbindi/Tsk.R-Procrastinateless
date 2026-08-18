@@ -33,7 +33,7 @@ sealed class ReminderEvent {
         val title: String,
         val date: String,
         val time: String,
-        val priority: String = "CASUAL",
+        val priority: String = Reminder.PRIORITY_NORMAL,
         val notes: String = "",
         val subTasksRaw: String = "",
         val motivation: String = ""
@@ -107,7 +107,7 @@ class ReminderBloc(
         title: String,
         date: String,
         time: String,
-        priority: String = "CASUAL",
+        priority: String = Reminder.PRIORITY_NORMAL,
         notes: String = "",
         subTasksRaw: String = "",
         motivation: String = ""

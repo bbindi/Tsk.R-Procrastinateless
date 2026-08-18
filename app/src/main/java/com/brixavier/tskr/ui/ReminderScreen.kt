@@ -48,7 +48,8 @@ import java.util.*
 enum class Screen {
     Home,
     Notes,
-    Calendar
+    Calendar,
+    Settings
 }
 
 /**
@@ -358,6 +359,11 @@ fun CalendarPage(
 fun ReminderScreen(
     state: ReminderState?,
     initialShowBottomSheet: Boolean = false,
+    isExactAlarmAllowed: Boolean = true,
+    isBatteryOptimizationIgnored: Boolean = true,
+    appVersion: String = "1.0.0",
+    onOpenAlarmSettings: () -> Unit = {},
+    onOpenBatterySettings: () -> Unit = {},
     onEvent: (ReminderEvent) -> Unit,
     onReminderClick: (Reminder) -> Unit = {},
     onSheetClosed: () -> Unit = {}
@@ -425,20 +431,34 @@ fun ReminderScreen(
                             .fillMaxSize()
                             .animateContentSize()
                     ) {
-                        // 0. App Branding Header
+                        // 0. App Branding Header with Settings Access
                         item {
-                            Text(
-                                text = "Tsk.R: Procrastinateless",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                                    letterSpacing = 1.sp
-                                ),
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(bottom = 16.dp),
-                                textAlign = TextAlign.Center
-                            )
+                                    .padding(bottom = 16.dp)
+                            ) {
+                                Text(
+                                    text = "Tsk.R: Procrastinateless",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                        letterSpacing = 1.sp
+                                    ),
+                                    modifier = Modifier.align(Alignment.Center)
+                                )
+
+                                IconButton(
+                                    onClick = { currentScreen = Screen.Settings },
+                                    modifier = Modifier.align(Alignment.CenterEnd)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = "Settings",
+                                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
                         }
 
                         // 1. Time-Based Greeting Dashboard Header
@@ -762,6 +782,15 @@ fun ReminderScreen(
                 Screen.Calendar -> {
                     CalendarPage(state = state, onEvent = onEvent)
                 }
+                Screen.Settings -> {
+                    SettingsPage(
+                        isExactAlarmAllowed = isExactAlarmAllowed,
+                        isBatteryOptimizationIgnored = isBatteryOptimizationIgnored,
+                        appVersion = appVersion,
+                        onOpenAlarmSettings = onOpenAlarmSettings,
+                        onOpenBatterySettings = onOpenBatterySettings
+                    )
+                }
             }
 
             // Floating Navigation & FAB Container
@@ -897,10 +926,8 @@ fun ReminderCard(
 
     val priorityColor = when {
         !reminder.isActive -> SuccessGreen
-        reminder.priority == "CRITICAL" -> MaterialTheme.colorScheme.error
-        reminder.priority == "HIGH" -> MaterialTheme.colorScheme.tertiary
-        reminder.priority == "CASUAL" -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.outline
+        reminder.isImportant() -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.primary
     }
 
     val activeGradientBrush = Brush.linearGradient(
@@ -1064,7 +1091,7 @@ fun AddReminderBottomSheet(
     var taskName by remember { mutableStateOf(reminderToEdit?.title ?: "") }
     var selectedDate by remember { mutableStateOf(reminderToEdit?.date ?: defaultDate) }
     var selectedTime by remember { mutableStateOf(reminderToEdit?.time ?: defaultTime) }
-    var priority by remember { mutableStateOf(reminderToEdit?.priority ?: "CASUAL") }
+    var priority by remember { mutableStateOf(reminderToEdit?.priority ?: Reminder.PRIORITY_NORMAL) }
     var notes by remember { mutableStateOf(reminderToEdit?.notes ?: "") }
     var subTasksRaw by remember { mutableStateOf(reminderToEdit?.subTasksRaw ?: "") }
     var motivation by remember { mutableStateOf(reminderToEdit?.motivation ?: "") }
@@ -1223,43 +1250,30 @@ fun AddReminderBottomSheet(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    val isCritical = priority == "CRITICAL"
+                    val isImportant = Reminder.isImportant(priority)
                     Button(
-                        onClick = { priority = "CRITICAL" },
+                        onClick = { priority = Reminder.PRIORITY_IMPORTANT },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isCritical) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (isCritical) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant
+                            containerColor = if (isImportant) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (isImportant) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("🟣 Critical")
+                        Text("🔥 Important")
                     }
     
-                    val isHigh = priority == "HIGH"
+                    val isNormal = !isImportant
                     Button(
-                        onClick = { priority = "HIGH" },
+                        onClick = { priority = Reminder.PRIORITY_NORMAL },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isHigh) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (isHigh) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurfaceVariant
+                            containerColor = if (isNormal) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (isNormal) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("🟠 High")
-                    }
-    
-                    val isCasual = priority == "CASUAL"
-                    Button(
-                        onClick = { priority = "CASUAL" },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isCasual) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (isCasual) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("🔵 Casual")
+                        Text("🙂 Normal")
                     }
                 }
     

@@ -41,11 +41,7 @@ fun ReminderDetailScreen(
     val scrollState = rememberScrollState()
     val randomMotivation = remember { motivationQuotes.random() }
 
-    val priorityColor = when (reminder.priority) {
-        "CRITICAL" -> MaterialTheme.colorScheme.error
-        "HIGH" -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.primary
-    }
+    val priorityColor = if (reminder.isImportant()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
 
     Scaffold(
         topBar = {
@@ -82,7 +78,7 @@ fun ReminderDetailScreen(
                         .background(priorityColor, CircleShape)
                 )
                 Text(
-                    text = reminder.priority,
+                    text = reminder.getPriorityDisplayName(),
                     style = MaterialTheme.typography.labelLarge,
                     color = priorityColor,
                     fontWeight = FontWeight.Bold,

@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import com.brixavier.tskr.AlarmActivity
 import com.brixavier.tskr.MainActivity
 import com.brixavier.tskr.engine.PersonalityEngine
+import com.brixavier.tskr.model.Reminder
 import com.brixavier.tskr.scheduler.ReminderScheduler
 
 /**
@@ -32,8 +33,9 @@ class AlarmReceiver : BroadcastReceiver() {
         val reminderId = intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_ID) ?: return
         val reminderTitle = intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_TITLE) ?: "Upcoming Task"
         val stage = intent.getStringExtra(ReminderScheduler.EXTRA_ALARM_STAGE) ?: ""
+        val priority = intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_PRIORITY)
 
-        Log.d(TAG, "Alarm triggered! ID: $reminderId, Title: $reminderTitle, Stage: $stage")
+        Log.d(TAG, "Alarm triggered! ID: $reminderId, Title: $reminderTitle, Stage: $stage, Priority: $priority")
 
         // Build elegant notification content based on the alarm stage
         val warningMessage = when (stage) {
@@ -46,7 +48,7 @@ class AlarmReceiver : BroadcastReceiver() {
         val personalityQuote = PersonalityEngine.getRandomQuote()
         val fullMessage = "$warningMessage\n\n\"$personalityQuote\""
 
-        showNotification(context, reminderId.hashCode(), reminderTitle, fullMessage, stage, reminderId)
+        showNotification(context, reminderId.hashCode(), reminderTitle, fullMessage, stage, reminderId, priority)
     }
 
     private fun showNotification(
@@ -55,7 +57,8 @@ class AlarmReceiver : BroadcastReceiver() {
         title: String,
         message: String,
         stage: String,
-        reminderId: String
+        reminderId: String,
+        priority: String?
     ) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
@@ -78,13 +81,25 @@ class AlarmReceiver : BroadcastReceiver() {
         }
         notificationManager.createNotificationChannel(channel)
 
-        // Tap notification opens AlarmActivity (Mission Mode) for the correct reminder
-        val openAppIntent = Intent(context, AlarmActivity::class.java).apply {
-            putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
-            putExtra(ReminderScheduler.EXTRA_REMINDER_TITLE, title)
-            putExtra(ReminderScheduler.EXTRA_ALARM_STAGE, stage)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        // Tap behavior depends on urgency
+        val isImportant = Reminder.isImportant(priority)
+        
+        val openAppIntent = if (isImportant) {
+            // IMPORTANT: Open full Mission Mode
+            Intent(context, AlarmActivity::class.java).apply {
+                putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
+                putExtra(ReminderScheduler.EXTRA_REMINDER_TITLE, title)
+                putExtra(ReminderScheduler.EXTRA_ALARM_STAGE, stage)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+        } else {
+            // NORMAL: Open app flow (Reminder Detail)
+            Intent(context, MainActivity::class.java).apply {
+                putExtra(MainActivity.EXTRA_OPEN_REMINDER_ID, reminderId)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
         }
+        
         val pendingIntent = PendingIntent.getActivity(
             context,
             notificationId,
@@ -92,19 +107,23 @@ class AlarmReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Create Full-Screen Intent to trigger AlarmActivity immediately (even over lock screen)
-        val fullScreenIntent = Intent(context, AlarmActivity::class.java).apply {
-            putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
-            putExtra(ReminderScheduler.EXTRA_REMINDER_TITLE, title)
-            putExtra(ReminderScheduler.EXTRA_ALARM_STAGE, stage)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION
+        // Create Full-Screen Intent to trigger AlarmActivity immediately for IMPORTANT tasks
+        val fullScreenPendingIntent = if (isImportant) {
+            val fullScreenIntent = Intent(context, AlarmActivity::class.java).apply {
+                putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
+                putExtra(ReminderScheduler.EXTRA_REMINDER_TITLE, title)
+                putExtra(ReminderScheduler.EXTRA_ALARM_STAGE, stage)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            }
+            PendingIntent.getActivity(
+                context,
+                notificationId + 1000,
+                fullScreenIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        } else {
+            null
         }
-        val fullScreenPendingIntent = PendingIntent.getActivity(
-            context,
-            notificationId + 1000, // Ensure unique request code from normal tap action
-            fullScreenIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
 
         // Personality-driven messaging
         val emoji = when (stage) {
@@ -125,7 +144,11 @@ class AlarmReceiver : BroadcastReceiver() {
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVibrate(longArrayOf(0, 500, 200, 500))
-            .setFullScreenIntent(fullScreenPendingIntent, true)
+            .apply {
+                if (Reminder.isImportant(priority)) {
+                    setFullScreenIntent(fullScreenPendingIntent, true)
+                }
+            }
             .setSound(alarmSound)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)

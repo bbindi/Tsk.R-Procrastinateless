@@ -4,9 +4,11 @@ import android.Manifest
 import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -60,6 +62,46 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+    }
+
+    private val isExactAlarmAllowed = mutableStateOf(true)
+    private val isBatteryOptimizationIgnored = mutableStateOf(true)
+
+    override fun onResume() {
+        super.onResume()
+        updatePermissionStates()
+    }
+
+    private fun updatePermissionStates() {
+        isExactAlarmAllowed.value = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+        } else {
+            true
+        }
+        isBatteryOptimizationIgnored.value = (getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun getAppVersion(): String {
+        return try {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                packageManager.getPackageInfo(packageName, 0)
+            }
+            packageInfo.versionName ?: "1.0.0"
+        } catch (e: Exception) {
+            "1.0.0"
+        }
+    }
+
+    private fun openBatterySettings() {
+        try {
+            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+            startActivity(intent)
+        } catch (e: Exception) {
+            val intent = Intent(Settings.ACTION_SETTINGS)
+            startActivity(intent)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -116,6 +158,11 @@ class MainActivity : ComponentActivity() {
                             ReminderScreen(
                                 state = state,
                                 initialShowBottomSheet = initialSheetShow,
+                                isExactAlarmAllowed = isExactAlarmAllowed.value,
+                                isBatteryOptimizationIgnored = isBatteryOptimizationIgnored.value,
+                                appVersion = getAppVersion(),
+                                onOpenAlarmSettings = { checkAndRequestExactAlarmPermission() },
+                                onOpenBatterySettings = { openBatterySettings() },
                                 onReminderClick = { selectedReminderId = it.id },
                                 onEvent = { event ->
                                     reminderBloc.onEvent(event)
