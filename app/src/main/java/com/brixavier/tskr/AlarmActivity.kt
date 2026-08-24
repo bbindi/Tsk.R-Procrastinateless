@@ -137,10 +137,14 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun snoozeReminder(reminder: Reminder) {
         scope.launch {
-            val now = LocalDateTime.now().plusMinutes(5)
-            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-            val parts = now.format(formatter).split(" ")
-            val updated = reminder.copy(date = parts[0], time = parts[1])
+            val snoozeTime = LocalDateTime.now().plusMinutes(5)
+            val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US)
+            val timeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.US)
+            
+            val updated = reminder.copy(
+                date = snoozeTime.format(dateFormatter),
+                time = snoozeTime.format(timeFormatter)
+            )
             database.reminderDao().update(updated)
             scheduler.scheduleAlarms(updated)
             cancelNotification(reminder.id)

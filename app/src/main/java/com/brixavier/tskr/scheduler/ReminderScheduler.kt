@@ -162,12 +162,13 @@ class ReminderScheduler(private val context: Context) {
      * Uses a 28-bit mask of the hashCode to avoid overflow when multiplied by 10.
      */
     private fun getRequestCode(id: String, stage: String): Int {
-        val hash = id.hashCode() and 0x0fffffff 
-        return when (stage) {
-            STAGE_7_DAYS -> hash * 10 + 1
-            STAGE_24_HOURS -> hash * 10 + 2
-            STAGE_DUE_NOW -> hash * 10 + 3
-            else -> hash * 10 + 9
+        val hash = id.hashCode() and 0x00ffffff 
+        val offset = when (stage) {
+            STAGE_7_DAYS -> 1
+            STAGE_24_HOURS -> 2
+            STAGE_DUE_NOW -> 3
+            else -> 9
         }
+        return hash * 10 + offset
     }
 }

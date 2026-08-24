@@ -22,14 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.brixavier.tskr.bloc.ReminderEvent
 import com.brixavier.tskr.model.Reminder
+import com.brixavier.tskr.engine.PersonalityEngine
 
-private val motivationQuotes = listOf(
-    "Why are you staring at notes? The clock is literally ticking!",
-    "Reading this won't get the task done. Get to work!",
-    "Your future self is currently groaning at your procrastination.",
-    "Action is the antidote to anxiety. Start now.",
-    "This mission is critical. Your potential is higher than your excuses."
-)
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,7 +34,7 @@ fun ReminderDetailScreen(
     onBack: () -> Unit
 ) {
     val scrollState = rememberScrollState()
-    val randomMotivation = remember { motivationQuotes.random() }
+    val randomMotivation = remember { PersonalityEngine.getRandomQuote() }
 
     val priorityColor = if (reminder.isImportant()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
 
@@ -174,24 +169,32 @@ fun ReminderDetailScreen(
             }
 
             // Motivation Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "A quick word from your friend:",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
                 )
-            ) {
-                Row(
-                    modifier = Modifier.padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Icon(Icons.Default.Psychology, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                    Text(
-                        text = randomMotivation,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
                     )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Icon(Icons.Default.Psychology, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                        Text(
+                            text = randomMotivation,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        )
+                    }
                 }
             }
 

@@ -124,7 +124,7 @@ class TskRWidget : GlanceAppWidget() {
                         )
                     )
                     Text(
-                        text = primaryTask.title,
+                        text = "${primaryTask.getPriorityEmoji()} ${primaryTask.title}",
                         style = TextStyle(
                             color = GlanceTheme.colors.onSurfaceVariant,
                             fontSize = 16.sp,
@@ -146,12 +146,10 @@ class TskRWidget : GlanceAppWidget() {
                             )),
                         verticalAlignment = Alignment.Vertical.CenterVertically
                     ) {
-                        Box(
-                            modifier = GlanceModifier
-                                .size(4.dp)
-                                .background(GlanceTheme.colors.secondary)
-                                .cornerRadius(2.dp)
-                        ) {}
+                        Text(
+                            text = task.getPriorityEmoji(),
+                            style = TextStyle(fontSize = 12.sp)
+                        )
                         Spacer(modifier = GlanceModifier.width(8.dp))
                         Text(
                             text = task.title,

@@ -14,3 +14,12 @@
 
 # Keep Glance Widget Receiver
 -keep class com.brixavier.tskr.widget.TskRWidgetReceiver { *; }
+
+# Strip Android debug logging in release builds
+-assumenosideeffects class android.util.Log {
+    public static *** v(...);
+    public static *** d(...);
+    public static *** i(...);
+    public static *** w(...);
+    public static *** e(...);
+}

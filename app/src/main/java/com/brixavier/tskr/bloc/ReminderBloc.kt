@@ -212,7 +212,13 @@ class ReminderBloc(
 
     private fun cancelNotification(id: String) {
         val notificationManager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        notificationManager.cancel(id.hashCode())
+        val hash = id.hashCode() and 0x00ffffff
+        
+        // Cancel all possible stage notifications for this reminder
+        notificationManager.cancel(hash * 10 + 1) // STAGE_7_DAYS
+        notificationManager.cancel(hash * 10 + 2) // STAGE_24_HOURS
+        notificationManager.cancel(hash * 10 + 3) // STAGE_DUE_NOW
+        notificationManager.cancel(hash * 10 + 9) // Default/Fallback
     }
 
     private suspend fun handleUpdateReminder(reminder: Reminder) {

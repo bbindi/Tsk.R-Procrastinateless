@@ -1,15 +1,16 @@
 package com.brixavier.tskr.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -60,7 +61,8 @@ fun SettingsPage(
                 statusColor = if (isBatteryOptimizationIgnored) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
                 actionText = "Allow Background Activity",
                 isActionRequired = !isBatteryOptimizationIgnored,
-                onAction = onOpenBatterySettings
+                onAction = onOpenBatterySettings,
+                expandableExplanation = "Android may put me to sleep to save battery. That's great for your battery, but not so great when I'm supposed to remind you about something.\n\nIf background activity is restricted, some reminders may be delayed."
             )
         }
 
@@ -128,8 +130,11 @@ fun SettingsItem(
     statusColor: androidx.compose.ui.graphics.Color,
     actionText: String,
     isActionRequired: Boolean = false,
-    onAction: () -> Unit
+    onAction: () -> Unit,
+    expandableExplanation: String? = null
 ) {
+    var isExplanationExpanded by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -162,6 +167,29 @@ fun SettingsItem(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            if (expandableExplanation != null) {
+                TextButton(
+                    onClick = { isExplanationExpanded = !isExplanationExpanded },
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Text(
+                        text = if (isExplanationExpanded) "Show less" else "Why this matters?",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                AnimatedVisibility(visible = isExplanationExpanded) {
+                    Text(
+                        text = expandableExplanation,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                    )
+                }
+            }
 
             if (isActionRequired) {
                 // Action Needed: Stack vertically for prominence and responsiveness

@@ -8,8 +8,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -106,7 +108,7 @@ fun NotesPage(
             )
         )
         Text(
-            text = "Keep track of checklists and notes for active reminders.",
+            text = "Because apparently remembering things yourself was too much to ask.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
         )
@@ -125,11 +127,20 @@ fun NotesPage(
                             .padding(vertical = 48.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "No active reminders",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "Nothing here yet.",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Either you're incredibly organized, or you've forgotten to make a checklist. I'm choosing optimism.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
             } else {
@@ -189,14 +200,14 @@ fun CalendarPage(
     ) {
         Column {
             Text(
-                text = "Tsk.R Calendar",
+                text = "Your Schedule",
                 style = MaterialTheme.typography.headlineLarge.copy(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
             )
             Text(
-                text = "Visualize your schedule and upcoming events.",
+                text = "Let's see what future-you has agreed to deal with.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
             )
@@ -318,7 +329,14 @@ fun CalendarPage(
                                 modifier = Modifier.size(36.dp)
                             )
                             Text(
-                                text = "Nothing scheduled. Enjoy your procrastination... while it lasts!",
+                                text = "Nothing scheduled here.",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Enjoy the peace. It probably won't last.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                 textAlign = TextAlign.Center,
@@ -714,46 +732,68 @@ fun ReminderScreen(
                         }
 
                         // 4. Collapsible History Accordion
-                        if (inactiveReminders.isNotEmpty()) {
-                            item {
-                                Card(
+                        item {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isHistoryExpanded = !isHistoryExpanded },
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                )
+                            ) {
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { isHistoryExpanded = !isHistoryExpanded },
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                                    )
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 14.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = if (isHistoryExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                                contentDescription = "Toggle History",
-                                                tint = MaterialTheme.colorScheme.primary
+                                        Icon(
+                                            imageVector = if (isHistoryExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                            contentDescription = "Toggle History",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = "History (${inactiveReminders.size} completed)",
+                                            style = MaterialTheme.typography.titleMedium.copy(
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
-                                            Text(
-                                                text = "History (${inactiveReminders.size} completed)",
-                                                style = MaterialTheme.typography.titleMedium.copy(
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            )
-                                        }
+                                        )
                                     }
                                 }
                             }
+                        }
 
-                            if (isHistoryExpanded) {
+                        if (isHistoryExpanded) {
+                            if (inactiveReminders.isEmpty()) {
+                                item {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 32.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = "No completed missions yet.",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "The history books are waiting. Try giving them something to write about.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            } else {
                                 items(
                                     items = inactiveReminders,
                                     key = { it.id }
@@ -1093,13 +1133,23 @@ fun AddReminderBottomSheet(
     var selectedTime by remember { mutableStateOf(reminderToEdit?.time ?: defaultTime) }
     var priority by remember { mutableStateOf(reminderToEdit?.priority ?: Reminder.PRIORITY_NORMAL) }
     var notes by remember { mutableStateOf(reminderToEdit?.notes ?: "") }
-    var subTasksRaw by remember { mutableStateOf(reminderToEdit?.subTasksRaw ?: "") }
+    
+    // Checklist Logic: Manage as a list of items to prevent pipe corruption
+    var subTasksList by remember { 
+        mutableStateOf(reminderToEdit?.subTasksRaw?.split("|")?.filter { it.isNotBlank() } ?: emptyList<String>()) 
+    }
+    var newSubTask by remember { mutableStateOf("") }
+    
     var motivation by remember { mutableStateOf(reminderToEdit?.motivation ?: "") }
     var showAdvanced by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    
+    fun onPipeAttempt() {
+        Toast.makeText(context, "Tsk.R doesn't allow | here. I use that little line to keep your checklist organized.", Toast.LENGTH_SHORT).show()
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1112,7 +1162,8 @@ fun AddReminderBottomSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(start = 24.dp, end = 24.dp, bottom = 36.dp, top = 8.dp),
+                    .imePadding() // Ensure buttons are visible above keyboard
+                    .padding(start = 24.dp, end = 24.dp, bottom = 20.dp, top = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
@@ -1122,6 +1173,13 @@ fun AddReminderBottomSheet(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 )
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
     
                 // Text input for reminder title
                 OutlinedTextField(
@@ -1321,14 +1379,61 @@ fun AddReminderBottomSheet(
                                     minLines = 2
                                 )
     
-                                OutlinedTextField(
-                                    value = subTasksRaw,
-                                    onValueChange = { subTasksRaw = it },
-                                    label = { Text("Checklist (pipe-separated)") },
-                                    placeholder = { Text("Subtask 1|Subtask 2") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    leadingIcon = { Icon(Icons.Default.List, contentDescription = null) }
-                                )
+                                // Refined Checklist UI: Add items one by one
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "Subtasks",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    
+                                    subTasksList.forEachIndexed { index, task ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = task,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            IconButton(onClick = {
+                                                subTasksList = subTasksList.toMutableList().apply { removeAt(index) }
+                                            }) {
+                                                Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(18.dp))
+                                            }
+                                        }
+                                    }
+
+                                    OutlinedTextField(
+                                        value = newSubTask,
+                                        onValueChange = { 
+                                            if (it.contains("|")) onPipeAttempt()
+                                            else newSubTask = it 
+                                        },
+                                        label = { Text("Add a subtask") },
+                                        placeholder = { Text("e.g. Bring files") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        trailingIcon = {
+                                            IconButton(
+                                                onClick = {
+                                                    if (newSubTask.isNotBlank()) {
+                                                        subTasksList = subTasksList + newSubTask.trim()
+                                                        newSubTask = ""
+                                                    }
+                                                },
+                                                enabled = newSubTask.isNotBlank()
+                                            ) {
+                                                Icon(Icons.Default.Add, contentDescription = "Add subtask")
+                                            }
+                                        },
+                                        singleLine = true
+                                    )
+                                }
     
                                 OutlinedTextField(
                                     value = motivation,
@@ -1342,8 +1447,10 @@ fun AddReminderBottomSheet(
                         }
                     }
                 }
+
+                } // End of Scrollable Column
     
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
     
                 // Action Buttons (Save/Cancel)
                 Row(
@@ -1360,7 +1467,8 @@ fun AddReminderBottomSheet(
                     Button(
                         onClick = {
                             if (taskName.isNotBlank()) {
-                                onSave(taskName, selectedDate, selectedTime, priority, notes, subTasksRaw, motivation)
+                                val combinedSubTasks = subTasksList.joinToString("|")
+                                onSave(taskName, selectedDate, selectedTime, priority, notes, combinedSubTasks, motivation)
                             }
                         },
                         modifier = Modifier.weight(1f),

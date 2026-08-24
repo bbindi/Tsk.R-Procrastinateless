@@ -48,7 +48,23 @@ class AlarmReceiver : BroadcastReceiver() {
         val personalityQuote = PersonalityEngine.getRandomQuote()
         val fullMessage = "$warningMessage\n\n\"$personalityQuote\""
 
-        showNotification(context, reminderId.hashCode(), reminderTitle, fullMessage, stage, reminderId, priority)
+        val notificationId = getNotificationId(reminderId, stage)
+        showNotification(context, notificationId, reminderTitle, fullMessage, stage, reminderId, priority)
+    }
+
+    /**
+     * Generates a deterministic, stage-aware notification ID.
+     * Uses a 24-bit mask to prevent integer overflow when multiplied by 10.
+     */
+    private fun getNotificationId(id: String, stage: String): Int {
+        val hash = id.hashCode() and 0x00ffffff
+        val offset = when (stage) {
+            ReminderScheduler.STAGE_7_DAYS -> 1
+            ReminderScheduler.STAGE_24_HOURS -> 2
+            ReminderScheduler.STAGE_DUE_NOW -> 3
+            else -> 9
+        }
+        return hash * 10 + offset
     }
 
     private fun showNotification(
