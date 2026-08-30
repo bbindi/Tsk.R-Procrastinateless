@@ -1,5 +1,6 @@
 package com.brixavier.tskr.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -33,6 +34,8 @@ fun ReminderDetailScreen(
     onEvent: (ReminderEvent) -> Unit,
     onBack: () -> Unit
 ) {
+    BackHandler(onBack = onBack)
+
     val scrollState = rememberScrollState()
     val randomMotivation = remember { PersonalityEngine.getRandomQuote() }
 

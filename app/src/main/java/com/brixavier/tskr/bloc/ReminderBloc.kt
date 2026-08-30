@@ -163,8 +163,19 @@ class ReminderBloc(
 
     private fun updateStreakState() {
         viewModelScope.launch(Dispatchers.IO) {
-            val streak = sharedPrefs.getInt("streak_count", 0)
-            _state.update { it?.copy(streak = streak) }
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            val lastDate = sharedPrefs.getString("last_streak_date", "")
+            val yesterday = java.util.Calendar.getInstance().apply {
+                add(java.util.Calendar.DAY_OF_YEAR, -1)
+            }.let { java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(it.time) }
+
+            val validStreak = if (lastDate == today || lastDate == yesterday) {
+                sharedPrefs.getInt("streak_count", 0)
+            } else {
+                0
+            }
+
+            _state.update { it?.copy(streak = validStreak) }
         }
     }
 

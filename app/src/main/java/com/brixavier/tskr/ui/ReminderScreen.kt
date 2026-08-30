@@ -1,5 +1,6 @@
 package com.brixavier.tskr.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
@@ -406,6 +407,11 @@ fun ReminderScreen(
         }
     }
 
+    // Intercept system Back button on non-Home screens to return to Home
+    BackHandler(enabled = currentScreen != Screen.Home) {
+        currentScreen = Screen.Home
+    }
+
     // Dynamically calculate greeting based on local clock
     val calendar = Calendar.getInstance()
     val hour = calendar.get(Calendar.HOUR_OF_DAY)
@@ -419,9 +425,15 @@ fun ReminderScreen(
     val activeReminders = state.reminders.filter { it.isActive }.sortedBy { "${it.date} ${it.time}" }
     val inactiveReminders = state.reminders.filter { !it.isActive }
     
-    val totalTasks = state.reminders.size
-    val completedTasks = inactiveReminders.size
-    val progress = if (totalTasks > 0) completedTasks.toFloat() / totalTasks else 0f
+    // Daily progress calculation based on today's workload (and active overdue tasks)
+    val todayDate = remember { LocalDate.now().toString() }
+    val todaysReminders = remember(state.reminders, todayDate) {
+        state.reminders.filter { it.date == todayDate || (it.isActive && it.date < todayDate) }
+    }
+    val todaysActive = todaysReminders.count { it.isActive }
+    val todaysTotal = todaysReminders.size
+    val todaysCompleted = todaysTotal - todaysActive
+    val progress = if (todaysTotal > 0) todaysCompleted.toFloat() / todaysTotal else 0f
     
     val nextUp = activeReminders.firstOrNull()
     val randomQuote = remember { PersonalityEngine.getRandomQuote() }
@@ -516,9 +528,10 @@ fun ReminderScreen(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
+                                            val streakLabel = if (state.streak == 1) "1 DAY STREAK" else "${state.streak} DAYS STREAK"
                                             Text(if (isCrown) "👑" else "🔥", fontSize = 18.sp)
                                             Text(
-                                                text = "${state.streak} DAY",
+                                                text = streakLabel,
                                                 style = MaterialTheme.typography.labelLarge.copy(
                                                     fontWeight = FontWeight.Bold,
                                                     color = if (isCrown) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSecondaryContainer
@@ -578,12 +591,12 @@ fun ReminderScreen(
                                     )
                                     Spacer(modifier = Modifier.height(16.dp))
                                     Text(
-                                        text = if (activeReminders.isNotEmpty()) {
-                                            "Keep going! $totalTasks tasks in total today."
-                                        } else if (totalTasks > 0) {
-                                            "🎉 You're all caught up. Go celebrate with a snack."
+                                        text = if (todaysTotal > 0 && todaysActive > 0) {
+                                            "Keep going! $todaysTotal tasks in total today."
+                                        } else if (todaysTotal > 0) {
+                                            "🎉 You're all caught up today. Go celebrate with a snack."
                                         } else {
-                                            "Ready to start your mission?"
+                                            "No tasks scheduled for today. Ready to start a new mission?"
                                         },
                                         style = MaterialTheme.typography.bodyMedium.copy(
                                             fontWeight = FontWeight.Medium,
