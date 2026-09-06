@@ -2,7 +2,6 @@ package com.brixavier.tskr
 
 import android.app.KeyguardManager
 import android.app.NotificationManager
-import android.content.Context
 import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
@@ -31,9 +30,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -63,7 +60,7 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     
     private val database by lazy { ReminderDatabase.getDatabase(this) }
     private val scheduler by lazy { ReminderScheduler(this) }
-    private val notificationManager by lazy { getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager }
+    private val notificationManager by lazy { getSystemService(NOTIFICATION_SERVICE) as NotificationManager }
     private val scope = CoroutineScope(Dispatchers.IO)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -160,7 +157,7 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
-            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+            val keyguardManager = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
             keyguardManager.requestDismissKeyguard(this, null)
         } else {
             window.addFlags(
@@ -187,31 +184,25 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
 
             ringtone = RingtoneManager.getRingtone(applicationContext, alarmUri)?.apply {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    audioAttributes = AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                }
+                audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
                 play()
             }
 
             // B. Continuous Rhythmic Vibration (Heavy pulsing)
             vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vibratorManager.defaultVibrator
+                val vibratorManager = getSystemService(VibratorManager::class.java)
+                vibratorManager?.defaultVibrator
             } else {
-                getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                getSystemService(Vibrator::class.java)
             }
 
             val pattern = longArrayOf(0, 150, 100, 150, 600) // Rhythmic heartbeat pattern
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator?.vibrate(
-                    VibrationEffect.createWaveform(pattern, 0)
-                )
-            } else {
-                vibrator?.vibrate(pattern, 0)
-            }
+            vibrator?.vibrate(
+                VibrationEffect.createWaveform(pattern, 0)
+            )
         } catch (e: Exception) {
             e.printStackTrace()
         }

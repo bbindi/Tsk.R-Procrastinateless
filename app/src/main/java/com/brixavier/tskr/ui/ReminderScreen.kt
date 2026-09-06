@@ -31,14 +31,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.brixavier.tskr.bloc.ReminderBloc
 import com.brixavier.tskr.bloc.ReminderEvent
 import com.brixavier.tskr.bloc.ReminderState
 import com.brixavier.tskr.model.Reminder
 import com.brixavier.tskr.ui.theme.*
 import com.brixavier.tskr.engine.PersonalityEngine
 import android.widget.Toast
+import android.text.format.DateFormat
 import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.launch
 
 import java.text.SimpleDateFormat
 import java.time.LocalDate
@@ -79,7 +80,7 @@ fun getRelativeTimeSpan(dateStr: String, timeStr: String): String {
             diffDays < -1 -> "Overdue by ${-diffDays} days"
             else -> "Today at $timeStr"
         }
-    } catch (ignored: Exception) {
+    } catch (_: Exception) {
         return "$dateStr $timeStr"
     }
 }
@@ -380,7 +381,7 @@ fun ReminderScreen(
     initialShowBottomSheet: Boolean = false,
     isExactAlarmAllowed: Boolean = true,
     isBatteryOptimizationIgnored: Boolean = true,
-    appVersion: String = "1.0.0",
+    appVersion: String = "1.0.1",
     onOpenAlarmSettings: () -> Unit = {},
     onOpenBatterySettings: () -> Unit = {},
     onEvent: (ReminderEvent) -> Unit,
@@ -1213,15 +1214,15 @@ fun AddReminderBottomSheet(
                 // Helper to format date beautifully
                 val formattedDateDisplay = remember(selectedDate) {
                     try {
-                        val sdfSource = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                        val sdfSource = SimpleDateFormat("yyyy-MM-dd", Locale.US)
                         val date = sdfSource.parse(selectedDate)
                         if (date != null) {
-                            val sdfDest = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US)
+                            val sdfDest = SimpleDateFormat("MMM dd, yyyy", Locale.US)
                             sdfDest.format(date)
                         } else {
                             selectedDate
                         }
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         selectedDate
                     }
                 }
@@ -1232,9 +1233,9 @@ fun AddReminderBottomSheet(
                         val parts = selectedTime.split(":")
                         val hour = parts.getOrNull(0)?.toIntOrNull() ?: 12
                         val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
-                        val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+                        val is24Hour = DateFormat.is24HourFormat(context)
                         if (is24Hour) {
-                            String.format(java.util.Locale.US, "%02d:%02d", hour, minute)
+                            String.format(Locale.US, "%02d:%02d", hour, minute)
                         } else {
                             val amPm = if (hour >= 12) "PM" else "AM"
                             val displayHour = when {
@@ -1242,9 +1243,9 @@ fun AddReminderBottomSheet(
                                 hour > 12 -> hour - 12
                                 else -> hour
                             }
-                            String.format(java.util.Locale.US, "%d:%02d %s", displayHour, minute, amPm)
+                            String.format(Locale.US, "%d:%02d %s", displayHour, minute, amPm)
                         }
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         selectedTime
                     }
                 }
@@ -1512,9 +1513,9 @@ fun M3ModalDatePicker(
 ) {
     val datePickerState = rememberDatePickerState(
         initialSelectedDateMillis = try {
-            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
             sdf.parse(initialDate)?.time
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         } ?: System.currentTimeMillis()
     )
@@ -1525,9 +1526,9 @@ fun M3ModalDatePicker(
             TextButton(
                 onClick = {
                     datePickerState.selectedDateMillis?.let { millis ->
-                        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-                        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
-                        val formatted = sdf.format(java.util.Date(millis))
+                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                        sdf.timeZone = TimeZone.getTimeZone("UTC")
+                        val formatted = sdf.format(Date(millis))
                         onDateSelected(formatted)
                     }
                     onDismiss()
@@ -1553,11 +1554,11 @@ fun M3TimePickerDialog(
     onTimeSelected: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val parts = initialTime.split(":")
     val initialHour = parts.getOrNull(0)?.toIntOrNull() ?: 12
     val initialMinute = parts.getOrNull(1)?.toIntOrNull() ?: 0
-    val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+    val is24Hour = DateFormat.is24HourFormat(context)
 
     val timePickerState = rememberTimePickerState(
         initialHour = initialHour,
@@ -1640,7 +1641,7 @@ fun M3TimePickerDialog(
                         }
                         TextButton(
                             onClick = {
-                                val formatted = String.format(java.util.Locale.US, "%02d:%02d", timePickerState.hour, timePickerState.minute)
+                                val formatted = String.format(Locale.US, "%02d:%02d", timePickerState.hour, timePickerState.minute)
                                 onTimeSelected(formatted)
                                 onDismiss()
                             }

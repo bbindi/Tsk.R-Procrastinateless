@@ -74,11 +74,11 @@ class MainActivity : ComponentActivity() {
 
     private fun updatePermissionStates() {
         isExactAlarmAllowed.value = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            (getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+            (getSystemService(ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
         } else {
             true
         }
-        isBatteryOptimizationIgnored.value = (getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+        isBatteryOptimizationIgnored.value = (getSystemService(POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
     }
 
     private fun getAppVersion(): String {
@@ -88,9 +88,9 @@ class MainActivity : ComponentActivity() {
             } else {
                 packageManager.getPackageInfo(packageName, 0)
             }
-            packageInfo.versionName ?: "1.0.0"
-        } catch (e: Exception) {
-            "1.0.0"
+            packageInfo.versionName ?: "1.0.1"
+        } catch (_: Exception) {
+            "1.0.1"
         }
     }
 
@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
         try {
             val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
             startActivity(intent)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             val intent = Intent(Settings.ACTION_SETTINGS)
             startActivity(intent)
         }
@@ -108,7 +108,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         
-        val sharedPref = getSharedPreferences("tsk_r_prefs", Context.MODE_PRIVATE)
+        val sharedPref = getSharedPreferences("tsk_r_prefs", MODE_PRIVATE)
         enqueueWidgetUpdate()
         
         setContent {
@@ -194,7 +194,7 @@ class MainActivity : ComponentActivity() {
 
     private fun checkAndRequestExactAlarmPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
             if (!alarmManager.canScheduleExactAlarms()) {
                 val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
                     data = Uri.fromParts("package", packageName, null)
