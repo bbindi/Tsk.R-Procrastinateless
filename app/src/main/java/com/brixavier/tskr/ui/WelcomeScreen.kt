@@ -1,5 +1,10 @@
 package com.brixavier.tskr.ui
 
+import android.Manifest
+import android.app.AlarmManager
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -15,11 +20,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.stringResource
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.brixavier.tskr.R
 
 private val funnyLines = listOf(
@@ -30,12 +41,56 @@ private val funnyLines = listOf(
     "Helping you remember things you'll probably still forget. But elegantly."
 )
 
+private fun checkExactAlarmPermission(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        alarmManager?.canScheduleExactAlarms() ?: true
+    } else {
+        true
+    }
+}
+
+private fun checkNotificationPermission(context: Context): Boolean {
+    val isPermissionGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+    } else {
+        true
+    }
+    return isPermissionGranted && NotificationManagerCompat.from(context).areNotificationsEnabled()
+}
+
 @Composable
 fun WelcomeScreen(
     onAlarmPermissionRequest: () -> Unit,
     onNotificationPermissionRequest: () -> Unit,
     onProceed: () -> Unit
 ) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var isAlarmGranted by remember {
+        mutableStateOf(checkExactAlarmPermission(context))
+    }
+    var isNotificationGranted by remember {
+        mutableStateOf(checkNotificationPermission(context))
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isAlarmGranted = checkExactAlarmPermission(context)
+                isNotificationGranted = checkNotificationPermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     var showDemands by remember { mutableStateOf(false) }
     val randomFunnyLine = remember { funnyLines.random() }
 
@@ -59,6 +114,8 @@ fun WelcomeScreen(
                 )
             } else {
                 DemandsView(
+                    isAlarmGranted = isAlarmGranted,
+                    isNotificationGranted = isNotificationGranted,
                     onAlarmRequest = onAlarmPermissionRequest,
                     onNotificationRequest = onNotificationPermissionRequest,
                     onProceed = onProceed
@@ -139,6 +196,8 @@ fun WelcomeView(
 
 @Composable
 fun DemandsView(
+    isAlarmGranted: Boolean,
+    isNotificationGranted: Boolean,
     onAlarmRequest: () -> Unit,
     onNotificationRequest: () -> Unit,
     onProceed: () -> Unit
@@ -165,6 +224,8 @@ fun DemandsView(
             title = "Alarms & Exact Scheduling",
             description = "Required to trigger our Mission Mode alarm loop.",
             buttonText = "Grant Alarm Access",
+            grantedStatusText = "✓ Alarm access enabled",
+            isGranted = isAlarmGranted,
             onGrant = onAlarmRequest
         )
 
@@ -173,6 +234,8 @@ fun DemandsView(
             title = "Notifications",
             description = "Required for daily encouragement and sarcastic alerts.",
             buttonText = "Grant Notifications",
+            grantedStatusText = "✓ Notifications enabled",
+            isGranted = isNotificationGranted,
             onGrant = onNotificationRequest
         )
 
@@ -193,7 +256,7 @@ fun DemandsView(
                 fontWeight = FontWeight.Bold
             )
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
     }
 }
@@ -204,6 +267,8 @@ fun PermissionCard(
     title: String,
     description: String,
     buttonText: String,
+    grantedStatusText: String,
+    isGranted: Boolean,
     onGrant: () -> Unit
 ) {
     Card(
@@ -239,12 +304,30 @@ fun PermissionCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            FilledTonalButton(
-                onClick = onGrant,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text(buttonText)
+            if (isGranted) {
+                Text(
+                    text = grantedStatusText,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+
+                FilledTonalButton(
+                    onClick = {},
+                    enabled = false,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Configured")
+                }
+            } else {
+                FilledTonalButton(
+                    onClick = onGrant,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(buttonText)
+                }
             }
         }
     }

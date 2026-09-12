@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
 
     private val requestNotificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { _ -> }
+    ) { _ -> updatePermissionStates() }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

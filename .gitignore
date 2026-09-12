@@ -9,6 +9,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+/release-signing.properties
 *.hprof
 .artifacts/
 *.apk

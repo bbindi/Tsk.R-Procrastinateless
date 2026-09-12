@@ -1145,7 +1145,8 @@ fun AddReminderBottomSheet(
     var taskName by remember { mutableStateOf(reminderToEdit?.title ?: "") }
     var selectedDate by remember { mutableStateOf(reminderToEdit?.date ?: defaultDate) }
     var selectedTime by remember { mutableStateOf(reminderToEdit?.time ?: defaultTime) }
-    var priority by remember { mutableStateOf(reminderToEdit?.priority ?: Reminder.PRIORITY_NORMAL) }
+    // New reminders start as Important; editing preserves the reminder's existing tier.
+    var priority by remember { mutableStateOf(reminderToEdit?.priority ?: Reminder.PRIORITY_IMPORTANT) }
     var notes by remember { mutableStateOf(reminderToEdit?.notes ?: "") }
     
     // Checklist Logic: Manage as a list of items to prevent pipe corruption

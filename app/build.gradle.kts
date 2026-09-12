@@ -8,6 +8,18 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseSigningProperties = Properties().apply {
+    val propertiesFile = rootProject.file("release-signing.properties")
+    if (propertiesFile.exists()) {
+        propertiesFile.inputStream().use(::load)
+    }
+}
+
+fun signingProperty(name: String): String? =
+    releaseSigningProperties.getProperty(name)
+        ?: providers.gradleProperty(name).orNull
+        ?: providers.environmentVariable("TSKR_${name.uppercase()}").orNull
+
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
@@ -22,14 +34,8 @@ android {
         applicationId = "com.brixavier.tskr"
         minSdk = 26
         targetSdk = 37
-        versionCode = 4
-        versionName = "1.0.1"
-
-        val localProperties = Properties()
-        val localPropertiesFile = rootProject.file("local.properties")
-        if (localPropertiesFile.exists()) {
-            localProperties.load(localPropertiesFile.inputStream())
-        }
+        versionCode = 5
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -39,6 +45,24 @@ android {
 
     buildTypes {
         release {
+            val storeFilePath = signingProperty("storeFile")
+            val storePassword = signingProperty("storePassword")
+            val keyAlias = signingProperty("keyAlias")
+            val keyPassword = signingProperty("keyPassword")
+
+            check(
+                listOf(storeFilePath, storePassword, keyAlias, keyPassword).all { !it.isNullOrBlank() }
+            ) {
+                "Release signing credentials are missing. Supply storeFile, storePassword, keyAlias, and keyPassword " +
+                    "in ignored release-signing.properties, Gradle properties, or TSKR_* environment variables."
+            }
+
+            signingConfig = signingConfigs.create("release") {
+                storeFile = rootProject.file(storeFilePath!!)
+                this.storePassword = storePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
