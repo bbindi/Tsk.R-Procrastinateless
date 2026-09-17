@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.brixavier.tskr.data.ReminderDatabase
+import com.brixavier.tskr.model.ReminderOccurrence
 import com.brixavier.tskr.scheduler.ReminderScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,7 +13,8 @@ import kotlinx.coroutines.launch
 
 /**
  * BroadcastReceiver triggered when the device finishes booting.
- * Responsible for restoring all active reminder alarms in AlarmManager.
+ * Responsible for restoring all active pending occurrence alarms in AlarmManager.
+ * Updated in V2 Phase 3 to restore [ReminderOccurrence] alarms.
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -34,15 +36,20 @@ class BootReceiver : BroadcastReceiver() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    // 1. Retrieve all active (upcoming) reminders
-                    val activeReminders = database.reminderDao().getUpcomingReminders()
-                    Log.d(TAG, "Found ${activeReminders.size} active reminders to restore.")
+                    // 1. Retrieve all PENDING occurrences
+                    val pendingOccurrences = database.reminderDao().getPendingOccurrences()
+                    Log.d(TAG, "Found ${pendingOccurrences.size} pending occurrences to restore.")
 
-                    // 2. Reuse ReminderScheduler to restore the warning cascade
-                    // scheduleAlarms is idempotent and handles past-time checks internally.
+                    // 2. Restore warning cascades for active occurrences
+                    pendingOccurrences.forEach { occurrence ->
+                        scheduler.scheduleOccurrenceAlarms(occurrence)
+                        Log.d(TAG, "Restored occurrence alarm for: '${occurrence.title}' (ID: ${occurrence.id})")
+                    }
+
+                    // 3. Fallback: Restore legacy active V1 reminders if any
+                    val activeReminders = database.reminderDao().getUpcomingReminders()
                     activeReminders.forEach { reminder ->
                         scheduler.scheduleAlarms(reminder)
-                        Log.d(TAG, "Restored alarms for: '${reminder.title}'")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to restore alarms after boot", e)

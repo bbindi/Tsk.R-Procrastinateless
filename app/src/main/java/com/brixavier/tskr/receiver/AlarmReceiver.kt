@@ -1,25 +1,38 @@
 package com.brixavier.tskr.receiver
 
-import android.media.RingtoneManager
+import android.R
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.brixavier.tskr.AlarmActivity
 import com.brixavier.tskr.MainActivity
-import com.brixavier.tskr.engine.PersonalityEngine
+import com.brixavier.tskr.data.ReminderDatabase
+
 import com.brixavier.tskr.model.Reminder
+import com.brixavier.tskr.personality.ActionType
+import com.brixavier.tskr.personality.PersonalityContext
+import com.brixavier.tskr.personality.PersonalityEngine
+import com.brixavier.tskr.personality.PersonalityIntensity
+import com.brixavier.tskr.personality.UrgencyLevel
 import com.brixavier.tskr.scheduler.ReminderScheduler
+import com.brixavier.tskr.sound.NotificationChannelManager
+import com.brixavier.tskr.sound.SoundType
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * BroadcastReceiver triggered by AlarmManager.
  * Automatically handles displaying highly legible, eye-catching reminder notifications.
  * Configured to instantly open AlarmActivity via Full Screen Intent.
+ * Updated in V2 Phase 3 to verify occurrence status and ignore stale/deleted alarms.
  */
 class AlarmReceiver : BroadcastReceiver() {
 
@@ -30,26 +43,66 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        val reminderId = intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_ID) ?: return
+        val occurrenceId = intent.getStringExtra(ReminderScheduler.EXTRA_OCCURRENCE_ID)
+            ?: intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_ID)
+            ?: return
         val reminderTitle = intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_TITLE) ?: "Upcoming Task"
         val stage = intent.getStringExtra(ReminderScheduler.EXTRA_ALARM_STAGE) ?: ""
         val priority = intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_PRIORITY)
 
-        Log.d(TAG, "Alarm triggered! ID: $reminderId, Title: $reminderTitle, Stage: $stage, Priority: $priority")
+        val pendingResult = goAsync()
+        val database = ReminderDatabase.getDatabase(context)
 
-        // Build elegant notification content based on the alarm stage
-        val warningMessage = when (stage) {
-            ReminderScheduler.STAGE_7_DAYS -> "Early Warning: 7 Days Remaining!"
-            ReminderScheduler.STAGE_24_HOURS -> "Action Required: 24 Hour Countdown!"
-            ReminderScheduler.STAGE_DUE_NOW -> "Mission Start: It is time!"
-            else -> "Upcoming event scheduled."
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Verify occurrence status in database to ignore stale or deleted alarms
+                val occurrence = database.reminderDao().getOccurrenceById(occurrenceId)
+                if (occurrence != null) {
+                    if (!occurrence.isPending()) {
+                        Log.d(TAG, "Occurrence $occurrenceId is not pending (status: ${occurrence.status}). Ignoring stale alarm.")
+                        return@launch
+                    }
+                } else {
+                    // Fallback check for legacy V1 reminder
+                    val reminder = database.reminderDao().getReminderById(occurrenceId)
+                    if (reminder == null || !reminder.isActive) {
+                        Log.d(TAG, "Target $occurrenceId is missing or inactive. Ignoring stale alarm.")
+                        return@launch
+                    }
+                }
+
+                Log.d(TAG, "Alarm triggered! ID: $occurrenceId, Title: $reminderTitle, Stage: $stage, Priority: $priority")
+
+                // Build elegant notification content based on the alarm stage
+                val warningMessage = when (stage) {
+                    ReminderScheduler.STAGE_7_DAYS -> "Early Warning: 7 Days Remaining!"
+                    ReminderScheduler.STAGE_24_HOURS -> "Action Required: 24 Hour Countdown!"
+                    ReminderScheduler.STAGE_DUE_NOW -> "Mission Start: It is time!"
+                    else -> "Upcoming event scheduled."
+                }
+
+                val ctxAction = when (stage) {
+                    ReminderScheduler.STAGE_7_DAYS, ReminderScheduler.STAGE_24_HOURS -> ActionType.MISSION_MODE_WARNING
+                    else -> ActionType.MISSION_MODE_DUE
+                }
+                val isImportant = Reminder.isImportant(priority)
+                val ctx = PersonalityContext(
+                    actionType = ctxAction,
+                    intensity = if (isImportant) PersonalityIntensity.MISSION else PersonalityIntensity.PLAYFUL,
+                    urgency = if (isImportant) UrgencyLevel.IMPORTANT else UrgencyLevel.NORMAL
+                )
+                val personalityEngine = PersonalityEngine()
+                val personalityQuote = personalityEngine.getMessage(ctx).text
+                val fullMessage = "$warningMessage\n\n\"$personalityQuote\""
+
+                val notificationId = getNotificationId(occurrenceId, stage)
+                showNotification(context, notificationId, reminderTitle, fullMessage, stage, occurrenceId, priority)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling alarm receive for ID: $occurrenceId", e)
+            } finally {
+                pendingResult.finish()
+            }
         }
-        
-        val personalityQuote = PersonalityEngine.getRandomQuote()
-        val fullMessage = "$warningMessage\n\n\"$personalityQuote\""
-
-        val notificationId = getNotificationId(reminderId, stage)
-        showNotification(context, notificationId, reminderTitle, fullMessage, stage, reminderId, priority)
     }
 
     /**
@@ -77,32 +130,14 @@ class AlarmReceiver : BroadcastReceiver() {
         priority: String?
     ) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-
-        // Notification channel with MAX importance for breakthrough
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            CHANNEL_NAME,
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "Channel for Tsk.R critical mission alerts"
-            enableVibration(true)
-            vibrationPattern = longArrayOf(0, 500, 200, 500)
-            setBypassDnd(true)
-            lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
-            setSound(alarmSound, android.media.AudioAttributes.Builder()
-                .setUsage(android.media.AudioAttributes.USAGE_ALARM)
-                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build())
-        }
-        notificationManager.createNotificationChannel(channel)
-
-        // Tap behavior depends on urgency
         val isImportant = Reminder.isImportant(priority)
-        
+        val soundType = if (isImportant) SoundType.IMPORTANT else SoundType.NORMAL
+        val channelId = NotificationChannelManager.getOrCreateNotificationChannel(context, soundType)
+
         val openAppIntent = if (isImportant) {
             // IMPORTANT: Open full Mission Mode
             Intent(context, AlarmActivity::class.java).apply {
+                putExtra(ReminderScheduler.EXTRA_OCCURRENCE_ID, reminderId)
                 putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
                 putExtra(ReminderScheduler.EXTRA_REMINDER_TITLE, title)
                 putExtra(ReminderScheduler.EXTRA_ALARM_STAGE, stage)
@@ -126,6 +161,7 @@ class AlarmReceiver : BroadcastReceiver() {
         // Create Full-Screen Intent to trigger AlarmActivity immediately for IMPORTANT tasks
         val fullScreenPendingIntent = if (isImportant) {
             val fullScreenIntent = Intent(context, AlarmActivity::class.java).apply {
+                putExtra(ReminderScheduler.EXTRA_OCCURRENCE_ID, reminderId)
                 putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
                 putExtra(ReminderScheduler.EXTRA_REMINDER_TITLE, title)
                 putExtra(ReminderScheduler.EXTRA_ALARM_STAGE, stage)
@@ -150,9 +186,9 @@ class AlarmReceiver : BroadcastReceiver() {
         val notificationTitle = "$emoji $title"
         
         // Android standard application launcher icon is used as the small icon
-        val smallIconResId = android.R.drawable.ic_lock_idle_alarm
+        val smallIconResId = R.drawable.ic_lock_idle_alarm
 
-        val notificationBuilder = NotificationCompat.Builder(context, CHANNEL_ID)
+        val notificationBuilder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(smallIconResId)
             .setContentTitle(notificationTitle)
             .setContentText(message)
@@ -165,7 +201,6 @@ class AlarmReceiver : BroadcastReceiver() {
                     setFullScreenIntent(fullScreenPendingIntent, true)
                 }
             }
-            .setSound(alarmSound)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)

@@ -31,25 +31,37 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.brixavier.tskr.data.ReminderDatabase
-import com.brixavier.tskr.engine.PersonalityEngine
+
 import com.brixavier.tskr.model.Reminder
+import com.brixavier.tskr.model.ReminderOccurrence
+import com.brixavier.tskr.personality.ActionType
+import com.brixavier.tskr.personality.PersonalityContext
+import com.brixavier.tskr.personality.PersonalityEngine
+import com.brixavier.tskr.personality.PersonalityIntensity
+import com.brixavier.tskr.personality.UrgencyLevel
 import com.brixavier.tskr.scheduler.ReminderScheduler
+import com.brixavier.tskr.sound.SharedPreferencesSoundStore
+import com.brixavier.tskr.sound.SoundResolver
+import com.brixavier.tskr.sound.SoundType
 import com.brixavier.tskr.ui.getRelativeTimeSpan
 import com.brixavier.tskr.ui.theme.ReminderAppTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
 
 /**
  * Striking, full-screen Alarm Overlay Activity - MISSION MODE.
+ * Updated in V2 Phase 3 to support [ReminderOccurrence] completion and snooze.
  */
 class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
@@ -68,15 +80,26 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
         configureLockScreenFlags()
 
-        val reminderId = intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_ID) ?: ""
+        val occurrenceId = intent.getStringExtra(ReminderScheduler.EXTRA_OCCURRENCE_ID)
+            ?: intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_ID)
+            ?: ""
         val reminderTitle = intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_TITLE) ?: "Mission Alert!"
         val alarmStage = intent.getStringExtra(ReminderScheduler.EXTRA_ALARM_STAGE) ?: ReminderScheduler.STAGE_DUE_NOW
+        val priority = intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_PRIORITY)
         
-        missionQuote = when (alarmStage) {
-            ReminderScheduler.STAGE_7_DAYS -> "Warning! Your task is one week out. Do not let this surprise you!"
-            ReminderScheduler.STAGE_24_HOURS -> "24 hours remaining! Panic mode optional, preparation mandatory!"
-            else -> PersonalityEngine.getRandomQuote()
+        val isImportant = Reminder.isImportant(priority)
+
+        val ctxAction = when (alarmStage) {
+            ReminderScheduler.STAGE_7_DAYS, ReminderScheduler.STAGE_24_HOURS -> ActionType.MISSION_MODE_WARNING
+            else -> ActionType.MISSION_MODE_DUE
         }
+        val ctx = PersonalityContext(
+            actionType = ctxAction,
+            intensity = if (isImportant) PersonalityIntensity.MISSION else PersonalityIntensity.ACCOUNTABILITY,
+            urgency = if (isImportant) UrgencyLevel.IMPORTANT else UrgencyLevel.NORMAL
+        )
+        val personalityEngine = PersonalityEngine()
+        missionQuote = personalityEngine.getMessage(ctx).text
         
         tts = TextToSpeech(this, this)
 
@@ -84,11 +107,17 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
         setContent {
             ReminderAppTheme(darkTheme = true) {
+                var occurrence by remember { mutableStateOf<ReminderOccurrence?>(null) }
                 var reminder by remember { mutableStateOf<Reminder?>(null) }
                 
-                LaunchedEffect(reminderId) {
-                    if (reminderId.isNotEmpty()) {
-                        reminder = database.reminderDao().getReminderById(reminderId)
+                LaunchedEffect(occurrenceId) {
+                    if (occurrenceId.isNotEmpty()) {
+                        occurrence = database.reminderDao().getOccurrenceById(occurrenceId)
+                        if (occurrence != null && occurrence?.templateId != null) {
+                            reminder = database.reminderDao().getReminderById(occurrence!!.templateId!!)
+                        } else {
+                            reminder = database.reminderDao().getReminderById(occurrenceId)
+                        }
                     }
                 }
 
@@ -98,22 +127,39 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     quote = missionQuote,
                     alarmStage = alarmStage,
                     onStartNow = {
-                        reminder?.let {
-                            scope.launch {
-                                database.reminderDao().update(it.copy(isActive = false))
-                                scheduler.cancelAlarms(it)
-                                cancelNotification(it.id)
-                                finish()
+                        scope.launch {
+                            val targetOccId = occurrence?.id ?: occurrenceId
+                            if (targetOccId.isNotEmpty()) {
+                                val nextOcc = database.reminderDao().completeOccurrenceTransaction(targetOccId)
+                                scheduler.cancelOccurrenceAlarms(targetOccId)
+                                cancelNotification(targetOccId)
+                                if (nextOcc != null) {
+                                    scheduler.scheduleOccurrenceAlarms(nextOcc)
+                                }
+                            } else if (reminder != null) {
+                                database.reminderDao().update(reminder!!.copy(isActive = false))
+                                scheduler.cancelAlarms(reminder!!)
+                                cancelNotification(reminder!!.id)
                             }
-                        } ?: dismissAlarm()
+                            finish()
+                        }
                     },
                     onSnooze = {
-                        reminder?.let {
-                            snoozeReminder(it)
-                        } ?: dismissAlarm()
+                        scope.launch {
+                            if (occurrence != null) {
+                                snoozeOccurrence(occurrence!!)
+                            } else if (reminder != null) {
+                                snoozeReminder(reminder!!)
+                            } else {
+                                dismissAlarm()
+                            }
+                        }
                     },
                     onDismiss = {
-                        reminder?.let { cancelNotification(it.id) }
+                        val targetId = occurrence?.id ?: reminder?.id ?: occurrenceId
+                        if (targetId.isNotEmpty()) {
+                            cancelNotification(targetId)
+                        }
                         dismissAlarm()
                     }
                 )
@@ -121,14 +167,33 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun cancelNotification(reminderId: String) {
-        notificationManager.cancel(reminderId.hashCode())
+    private fun cancelNotification(targetId: String) {
+        notificationManager.cancel(targetId.hashCode())
     }
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale.US
             tts?.speak(missionQuote, TextToSpeech.QUEUE_FLUSH, null, null)
+        }
+    }
+
+    private fun snoozeOccurrence(occurrence: ReminderOccurrence) {
+        scope.launch {
+            val snoozeTime = LocalDateTime.now().plusMinutes(5)
+            val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US)
+            val timeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.US)
+            val snoozeEpochMs = snoozeTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+            val updated = occurrence.copy(
+                date = snoozeTime.format(dateFormatter),
+                time = snoozeTime.format(timeFormatter),
+                snoozedUntilMs = snoozeEpochMs
+            )
+            database.reminderDao().updateOccurrence(updated)
+            scheduler.scheduleOccurrenceAlarms(updated)
+            cancelNotification(occurrence.id)
+            finish()
         }
     }
 
@@ -174,21 +239,27 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
      */
     private fun startAlarmSignals() {
         try {
-            // A. Ringtone Initializer
-            var alarmUri: Uri? = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            if (alarmUri == null) {
-                alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            }
-            if (alarmUri == null) {
-                alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-            }
+            // A. Ringtone Initializer via SoundResolver
+            val soundStore = SharedPreferencesSoundStore(this)
+            val alarmUri = SoundResolver.resolveSoundUri(this, soundStore, SoundType.MISSION_MODE)
 
-            ringtone = RingtoneManager.getRingtone(applicationContext, alarmUri)?.apply {
-                audioAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-                play()
+            ringtone = try {
+                RingtoneManager.getRingtone(applicationContext, alarmUri)?.apply {
+                    audioAttributes = AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                    play()
+                }
+            } catch (_: Exception) {
+                val fallbackUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                RingtoneManager.getRingtone(applicationContext, fallbackUri)?.apply {
+                    audioAttributes = AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                    play()
+                }
             }
 
             // B. Continuous Rhythmic Vibration (Heavy pulsing)
@@ -280,15 +351,23 @@ fun AlarmScreen(
     }
 
     val bodyText = when (alarmStage) {
-        ReminderScheduler.STAGE_7_DAYS -> "You have '$title' coming up in 7 DAYS. Stop pretending it's far away—start preparing today!"
-        ReminderScheduler.STAGE_24_HOURS -> "You have '$title' in exactly 24 HOURS! Get ready, your future self is watching!"
-        else -> "'$title' is DUE NOW! Do it now. Your future self has enough problems."
+        ReminderScheduler.STAGE_7_DAYS -> "You have '$title' coming up in 7 DAYS."
+        ReminderScheduler.STAGE_24_HOURS -> "You have '$title' in exactly 24 HOURS!"
+        else -> "'$title' is DUE NOW."
     }
 
     val primaryButtonText = when (alarmStage) {
         ReminderScheduler.STAGE_7_DAYS -> "Acknowledge Warning"
         ReminderScheduler.STAGE_24_HOURS -> "I'm On It!"
         else -> "🚀 Complete Task"
+    }
+
+    val rewardText = remember {
+        val ctx = PersonalityContext(
+            actionType = ActionType.MISSION_MODE_COMPLETION,
+            intensity = PersonalityIntensity.MISSION
+        )
+        PersonalityEngine().getMessage(ctx).text
     }
 
     Box(
@@ -401,7 +480,7 @@ fun AlarmScreen(
                             letterSpacing = 1.sp
                         )
                         Text(
-                            text = "Peace of mind 😌",
+                            text = rewardText,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -423,7 +502,7 @@ fun AlarmScreen(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
                     textAlign = TextAlign.Center,
-                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    fontStyle = FontStyle.Italic,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )

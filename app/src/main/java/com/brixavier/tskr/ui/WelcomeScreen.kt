@@ -32,14 +32,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.brixavier.tskr.R
-
-private val funnyLines = listOf(
-    "The app that cares about your schedule more than you do. Possibly too much.",
-    "Your tasks are waiting. They aren't angry, just... disappointed.",
-    "Procrastination ends here. Or at least, it gets much noisier.",
-    "We will remind you. We will find you. And we will notify you.",
-    "Helping you remember things you'll probably still forget. But elegantly."
-)
+import com.brixavier.tskr.personality.PersonalityEngine
+import com.brixavier.tskr.personality.PersonalityContext
+import com.brixavier.tskr.personality.ActionType
 
 private fun checkExactAlarmPermission(context: Context): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -64,6 +59,7 @@ private fun checkNotificationPermission(context: Context): Boolean {
 
 @Composable
 fun WelcomeScreen(
+    personalityEngine: PersonalityEngine,
     onAlarmPermissionRequest: () -> Unit,
     onNotificationPermissionRequest: () -> Unit,
     onProceed: () -> Unit
@@ -92,7 +88,10 @@ fun WelcomeScreen(
     }
 
     var showDemands by remember { mutableStateOf(false) }
-    val randomFunnyLine = remember { funnyLines.random() }
+
+    val onboardingMessage = remember {
+        personalityEngine.getMessage(PersonalityContext(actionType = ActionType.ONBOARDING)).text
+    }
 
     Box(
         modifier = Modifier
@@ -109,7 +108,7 @@ fun WelcomeScreen(
         ) { isDemands ->
             if (!isDemands) {
                 WelcomeView(
-                    funnyLine = randomFunnyLine,
+                    funnyLine = onboardingMessage,
                     onEnter = { showDemands = true }
                 )
             } else {
