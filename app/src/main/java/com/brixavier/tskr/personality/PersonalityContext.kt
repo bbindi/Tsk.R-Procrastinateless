@@ -56,6 +56,8 @@ data class PersonalityContext(
     val timeOfDayHour: Int? = null,
     val overdueMinutes: Int = 0,
     val snoozeCount: Int = 0,
+    val isEarlyCompletion: Boolean = false,
+    val oldestOverdueMinutes: Int = 0,
     val isAllCaughtUp: Boolean = false,
     val planProgressRatio: Float = 0f,
     val planTotalTasks: Int = 0,

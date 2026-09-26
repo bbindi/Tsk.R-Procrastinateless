@@ -212,11 +212,77 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
 }
 
 /**
+ * Migration from Database Schema Version 10 to Schema Version 11.
+ * Adds 'snoozeCount' column to 'reminder_occurrences' table for multi-step snooze tracking.
+ */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `reminder_occurrences` ADD COLUMN `snoozeCount` INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/**
+ * Migration from Database Schema Version 11 to Schema Version 12.
+ * Adds Recurrence 2.0 configuration columns to 'reminders' table and converts legacy CUSTOM_DAYS to DAILY.
+ */
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `reminders` ADD COLUMN `recurrenceDaysOfWeek` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `reminders` ADD COLUMN `recurrenceMonthlyMode` TEXT NOT NULL DEFAULT 'DAY_OF_MONTH'")
+        db.execSQL("ALTER TABLE `reminders` ADD COLUMN `recurrenceYearlyMode` TEXT NOT NULL DEFAULT 'SPECIFIC_DATE'")
+        db.execSQL("ALTER TABLE `reminders` ADD COLUMN `recurrenceOrdinal` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `reminders` ADD COLUMN `recurrenceWeekday` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `reminders` ADD COLUMN `recurrenceYearlyMonth` INTEGER NOT NULL DEFAULT 0")
+
+        // Legacy migration: Convert CUSTOM_DAYS to DAILY with interval
+        db.execSQL("UPDATE `reminders` SET `recurrenceType` = 'DAILY' WHERE `recurrenceType` = 'CUSTOM_DAYS'")
+    }
+}
+
+/**
+ * Migration from Database Schema Version 12 to Schema Version 13.
+ * Adds Plan Identity columns ('category' and 'categorySource') to 'plans' table and migrates legacy emoji icons.
+ */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // 1. Add Plan Identity columns to 'plans' table
+        db.execSQL("ALTER TABLE `plans` ADD COLUMN `category` TEXT NOT NULL DEFAULT 'PERSONAL'")
+        db.execSQL("ALTER TABLE `plans` ADD COLUMN `categorySource` TEXT NOT NULL DEFAULT 'AUTOMATIC'")
+
+        // 2. Migrate legacy emoji/icon values to structured PlanCategory strings where possible
+        db.execSQL("UPDATE `plans` SET `category` = 'WORK' WHERE `icon` LIKE '%💼%' OR `icon` LIKE '%🏢%' OR `icon` LIKE '%👔%'")
+        db.execSQL("UPDATE `plans` SET `category` = 'GOALS' WHERE `icon` LIKE '%🎯%' OR `icon` LIKE '%🏆%' OR `icon` LIKE '%🚩%'")
+        db.execSQL("UPDATE `plans` SET `category` = 'FINANCE' WHERE `icon` LIKE '%💰%' OR `icon` LIKE '%💵%' OR `icon` LIKE '%🏦%'")
+        db.execSQL("UPDATE `plans` SET `category` = 'HOME' WHERE `icon` LIKE '%🏠%' OR `icon` LIKE '%🏡%' OR `icon` LIKE '%🧹%'")
+        db.execSQL("UPDATE `plans` SET `category` = 'TRAVEL' WHERE `icon` LIKE '%✈%' OR `icon` LIKE '%🧳%' OR `icon` LIKE '%🗺%'")
+        db.execSQL("UPDATE `plans` SET `category` = 'EVENTS' WHERE `icon` LIKE '%🎉%' OR `icon` LIKE '%🎂%' OR `icon` LIKE '%💍%'")
+        db.execSQL("UPDATE `plans` SET `category` = 'SPIRITUAL' WHERE `icon` LIKE '%📖%' OR `icon` LIKE '%🙏%' OR `icon` LIKE '%⛪%'")
+        db.execSQL("UPDATE `plans` SET `category` = 'CREATIVE' WHERE `icon` LIKE '%🎨%' OR `icon` LIKE '%✍%' OR `icon` LIKE '%🎵%'")
+        db.execSQL("UPDATE `plans` SET `category` = 'SHOPPING' WHERE `icon` LIKE '%🛒%' OR `icon` LIKE '%🛍%'")
+        db.execSQL("UPDATE `plans` SET `category` = 'HEALTH' WHERE `icon` LIKE '%🏋%' OR `icon` LIKE '%💪%' OR `icon` LIKE '%🏥%'")
+        db.execSQL("UPDATE `plans` SET `category` = 'FAMILY' WHERE `icon` LIKE '%👨‍👩‍👧‍👦%' OR `icon` LIKE '%👶%' OR `icon` LIKE '%❤️%'")
+        db.execSQL("UPDATE `plans` SET `category` = 'PROJECTS' WHERE `icon` LIKE '%📁%' OR `icon` LIKE '%💻%' OR `icon` LIKE '%⚙%'")
+        db.execSQL("UPDATE `plans` SET `category` = 'PLANNING' WHERE `icon` LIKE '%📅%' OR `icon` LIKE '%📋%' OR `icon` LIKE '%🗓%'")
+    }
+}
+
+/**
+ * Migration from Database Schema Version 13 to Schema Version 14.
+ * Adds Plan Color Identity columns ('color' and 'colorSource') to 'plans' table.
+ */
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `plans` ADD COLUMN `color` TEXT NOT NULL DEFAULT 'SLATE'")
+        db.execSQL("ALTER TABLE `plans` ADD COLUMN `colorSource` TEXT NOT NULL DEFAULT 'CATEGORY'")
+    }
+}
+
+/**
  * The SQLite Room Database for persisting Reminders and Occurrences.
  */
 @Database(
     entities = [Plan::class, Reminder::class, ReminderOccurrence::class, PlanNoteSection::class, PlanStep::class],
-    version = 10,
+    version = 14,
     exportSchema = false
 )
 abstract class ReminderDatabase : RoomDatabase() {
@@ -234,7 +300,7 @@ abstract class ReminderDatabase : RoomDatabase() {
                     ReminderDatabase::class.java,
                     "reminder_database"
                 )
-                .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                 .build()
                 INSTANCE = instance
                 instance

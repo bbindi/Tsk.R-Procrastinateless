@@ -7,7 +7,24 @@ import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.brixavier.tskr.scheduler.ReminderScheduler
 import java.security.MessageDigest
+
+/**
+ * Authoritative helper to calculate stage-aware notification IDs deterministically.
+ */
+object NotificationIdHelper {
+    fun getNotificationId(occurrenceId: String, stage: String): Int {
+        val hash = occurrenceId.hashCode() and 0x00ffffff
+        val offset = when (stage) {
+            ReminderScheduler.STAGE_7_DAYS -> 1
+            ReminderScheduler.STAGE_24_HOURS -> 2
+            ReminderScheduler.STAGE_DUE_NOW -> 3
+            else -> 9
+        }
+        return hash * 10 + offset
+    }
+}
 
 /**
  * Reusable notification-channel manager for Tsk.R that dynamically handles sound-specific channels.

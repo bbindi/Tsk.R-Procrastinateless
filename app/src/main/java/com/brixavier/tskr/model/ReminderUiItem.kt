@@ -23,7 +23,8 @@ data class ReminderUiItem(
     val notifyDueNow: Boolean = true,
     val planId: String? = null,
     val planName: String? = null,
-    val planIcon: String? = null
+    val planIcon: String? = null,
+    val snoozeCount: Int = 0
 ) {
     fun isPending(): Boolean = status == ReminderOccurrence.STATUS_PENDING
     fun isCompleted(): Boolean = status == ReminderOccurrence.STATUS_COMPLETED

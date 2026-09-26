@@ -5,6 +5,7 @@ import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -12,19 +13,46 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import com.brixavier.tskr.ui.theme.TskRMotion
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.brixavier.tskr.model.Plan
+import com.brixavier.tskr.ui.AddPlanBottomSheet
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.core.content.edit
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.ViewModel
@@ -35,22 +63,26 @@ import com.brixavier.tskr.bloc.ReminderBloc
 import com.brixavier.tskr.bloc.ReminderEvent
 import com.brixavier.tskr.bloc.ReminderState
 import com.brixavier.tskr.data.ReminderDatabase
+import com.brixavier.tskr.model.ReminderOccurrence
+import com.brixavier.tskr.personality.ActionType
+import com.brixavier.tskr.personality.BehavioralContextResolver
+import com.brixavier.tskr.personality.PersonalityContext
+import com.brixavier.tskr.personality.PersonalityEngine
+import com.brixavier.tskr.personality.PersonalityIntensity
 import com.brixavier.tskr.scheduler.ReminderScheduler
+import com.brixavier.tskr.sound.SharedPreferencesSoundStore
+import com.brixavier.tskr.sound.SoundResolver
+import com.brixavier.tskr.sound.SoundType
 import com.brixavier.tskr.ui.PlanDetailScreen
 import com.brixavier.tskr.ui.ReminderDetailScreen
 import com.brixavier.tskr.ui.ReminderScreen
 import com.brixavier.tskr.ui.Screen
 import com.brixavier.tskr.ui.WelcomeScreen
+import com.brixavier.tskr.ui.WhatsNewWalkthrough
+import com.brixavier.tskr.ui.theme.AppThemeMode
 import com.brixavier.tskr.ui.theme.ReminderAppTheme
 import com.brixavier.tskr.widget.WidgetUpdateWorker
-import android.media.RingtoneManager
-import com.brixavier.tskr.personality.ActionType
-import com.brixavier.tskr.personality.PersonalityContext
-import com.brixavier.tskr.personality.PersonalityEngine
-import com.brixavier.tskr.personality.PersonalityIntensity
-import com.brixavier.tskr.sound.SharedPreferencesSoundStore
-import com.brixavier.tskr.sound.SoundResolver
-import com.brixavier.tskr.sound.SoundType
+import java.time.LocalTime
 import java.util.concurrent.TimeUnit
 
 /**
@@ -153,9 +185,9 @@ class MainActivity : ComponentActivity() {
             } else {
                 packageManager.getPackageInfo(packageName, 0)
             }
-            packageInfo.versionName ?: "1.0.1"
+            packageInfo.versionName ?: "1.0.2"
         } catch (_: Exception) {
-            "1.0.1"
+            "1.0.2"
         }
     }
 
@@ -169,18 +201,43 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         
         val sharedPref = getSharedPreferences("tsk_r_prefs", MODE_PRIVATE)
         enqueueWidgetUpdate()
         
         setContent {
-            ReminderAppTheme {
+            val themeModeStr = sharedPref.getString("theme_mode", AppThemeMode.SYSTEM.name) ?: AppThemeMode.SYSTEM.name
+            var currentThemeMode by remember {
+                mutableStateOf(
+                    try {
+                        AppThemeMode.valueOf(themeModeStr)
+                    } catch (_: Exception) {
+                        AppThemeMode.SYSTEM
+                    }
+                )
+            }
+
+            val isSystemDark = isSystemInDarkTheme()
+            val isDark = when (currentThemeMode) {
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.DARK -> true
+                AppThemeMode.SYSTEM -> isSystemDark
+            }
+
+            ReminderAppTheme(darkTheme = isDark) {
                 var isFirstRun by remember { 
                     mutableStateOf(sharedPref.getBoolean("isFirstRun", true)) 
                 }
+                var v2WhatsNewSeen by remember {
+                    mutableStateOf(sharedPref.getBoolean("v2_whats_new_seen", false))
+                }
+                var showWhatsNewReplay by remember { mutableStateOf(false) }
+
                 val personalityEngine = remember { PersonalityEngine() }
 
                 Surface(
@@ -192,9 +249,24 @@ class MainActivity : ComponentActivity() {
                             personalityEngine = personalityEngine,
                             onAlarmPermissionRequest = { checkAndRequestExactAlarmPermission() },
                             onNotificationPermissionRequest = { checkAndRequestNotificationsPermission() },
+                            onBatteryOptimizationRequest = { openBatterySettings() },
                             onProceed = {
-                                sharedPref.edit { putBoolean("isFirstRun", false) }
+                                sharedPref.edit {
+                                    putBoolean("isFirstRun", false)
+                                }
                                 isFirstRun = false
+                            }
+                        )
+                    } else if (!v2WhatsNewSeen || showWhatsNewReplay) {
+                        WhatsNewWalkthrough(
+                            isSettingsReplay = showWhatsNewReplay,
+                            onComplete = {
+                                sharedPref.edit { putBoolean("v2_whats_new_seen", true) }
+                                v2WhatsNewSeen = true
+                                showWhatsNewReplay = false
+                            },
+                            onDismiss = {
+                                showWhatsNewReplay = false
                             }
                         )
                     } else {
@@ -211,6 +283,9 @@ class MainActivity : ComponentActivity() {
                         }
 
                         var selectedPlanId by remember { mutableStateOf<String?>(null) }
+                        var editingPlan by remember { mutableStateOf<Plan?>(null) }
+                        var showPlanSheet by remember { mutableStateOf(false) }
+                        val planSheetState = rememberModalBottomSheetState()
                         var taskPreselectedPlanId by remember { mutableStateOf<String?>(null) }
                         var taskPreselectedReminderId by remember { mutableStateOf<String?>(null) }
                         var activeTab by remember { mutableStateOf(Screen.Home) }
@@ -236,11 +311,28 @@ class MainActivity : ComponentActivity() {
                                         else -> PersonalityIntensity.PLAYFUL
                                     }
 
+                                    val targetItem = state?.uiItems?.find { it.occurrenceId == selectedReminderId || it.templateId == selectedReminderId }
+                                    val isEarly = if (action == ActionType.COMPLETION && targetItem != null) {
+                                        targetItem.completedAtMs != null &&
+                                        BehavioralContextResolver.isEarlyCompletion(
+                                            ReminderOccurrence(
+                                                id = targetItem.occurrenceId,
+                                                title = targetItem.title,
+                                                date = targetItem.date,
+                                                time = targetItem.time,
+                                                status = targetItem.status,
+                                                completedAtMs = targetItem.completedAtMs
+                                            )
+                                        )
+                                    } else false
+
                                     val ctx = PersonalityContext(
                                         actionType = action,
                                         intensity = intensity,
                                         isRecurring = isRecurring,
-                                        streak = streak
+                                        streak = streak,
+                                        timeOfDayHour = LocalTime.now().hour,
+                                        isEarlyCompletion = isEarly
                                     )
                                     val personalitySuffix = personalityEngine.getMessage(ctx).text
                                     "$msg\n$personalitySuffix"
@@ -248,7 +340,15 @@ class MainActivity : ComponentActivity() {
                                     msg
                                 }
 
-                                snackbarHostState.showSnackbar(fullMessage)
+                                val job = launch {
+                                    snackbarHostState.showSnackbar(
+                                        message = fullMessage,
+                                        duration = SnackbarDuration.Indefinite
+                                    )
+                                }
+                                delay(4500)
+                                snackbarHostState.currentSnackbarData?.dismiss()
+                                job.cancel()
                                 reminderBloc.onEvent(ReminderEvent.ClearUserMessage)
                             }
                         }
@@ -275,87 +375,206 @@ class MainActivity : ComponentActivity() {
                             snackbarHost = {
                                 SnackbarHost(
                                     hostState = snackbarHostState,
-                                    modifier = Modifier.padding(bottom = 88.dp)
-                                )
+                                    modifier = Modifier.padding(bottom = 100.dp, start = 16.dp, end = 16.dp)
+                                ) { snackbarData ->
+                                    val message = snackbarData.visuals.message
+                                    val parts = message.split("\n", limit = 2)
+                                    val primaryText = parts.getOrNull(0) ?: ""
+                                    val personalityText = parts.getOrNull(1)
+                                    val density = LocalDensity.current
+
+                                    AnimatedVisibility(
+                                        visible = true,
+                                        enter = fadeIn(animationSpec = tween(durationMillis = TskRMotion.DURATION_STANDARD, easing = TskRMotion.EasingStandard)) +
+                                                slideInVertically(
+                                                    animationSpec = tween(durationMillis = TskRMotion.DURATION_STANDARD, easing = TskRMotion.EasingStandard),
+                                                    initialOffsetY = { with(density) { 12.dp.roundToPx() } }
+                                                ),
+                                        exit = fadeOut(animationSpec = tween(durationMillis = TskRMotion.DURATION_MICRO)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(16.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            tonalElevation = 6.dp,
+                                            shadowElevation = 8.dp,
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = primaryText,
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                if (!personalityText.isNullOrBlank()) {
+                                                    Text(
+                                                        text = personalityText,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             },
-                            containerColor = MaterialTheme.colorScheme.background
+                            containerColor = Color.Transparent,
+                            contentWindowInsets = WindowInsets(0, 0, 0, 0)
                         ) { paddingValues ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(paddingValues)
                             ) {
-                                if (selectedUiItem != null) {
-                                    ReminderDetailScreen(
-                                        item = selectedUiItem,
-                                        personalityEngine = personalityEngine,
-                                        onEvent = { reminderBloc.onEvent(it) },
-                                        onEditTask = { templateId ->
-                                            selectedReminderId = null
-                                            taskPreselectedReminderId = templateId
-                                            initialSheetShow = true
-                                        },
-                                        onBack = { selectedReminderId = null }
-                                    )
-                                } else if (selectedPlanId != null) {
-                                    PlanDetailScreen(
-                                        planId = selectedPlanId!!,
-                                        state = state ?: ReminderState(),
-                                        personalityEngine = personalityEngine,
-                                        onEvent = { reminderBloc.onEvent(it) },
-                                        onEditPlan = { plan ->
-                                            // Handle edit if needed
-                                        },
-                                        onCreateTaskForPlan = { planId ->
-                                            selectedPlanId = null
-                                            taskPreselectedPlanId = planId
-                                            initialSheetShow = true
-                                        },
-                                        onBack = { selectedPlanId = null }
-                                    )
-                                } else {
-                                    ReminderScreen(
-                                        state = state,
-                                        personalityEngine = personalityEngine,
-                                        initialScreen = activeTab,
-                                        initialShowBottomSheet = initialSheetShow,
-                                        preselectedPlanId = taskPreselectedPlanId,
-                                        initialEditingReminderId = taskPreselectedReminderId,
-                                        isExactAlarmAllowed = isExactAlarmAllowed.value,
-                                        isBatteryOptimizationIgnored = isBatteryOptimizationIgnored.value,
-                                        appVersion = getAppVersion(),
-                                        onOpenAlarmSettings = { checkAndRequestExactAlarmPermission() },
-                                        onOpenBatterySettings = { openBatterySettings() },
-                                        onPickSound = { soundType -> launchSoundPicker(soundType) },
-                                        onResetSound = { soundType ->
-                                            val store = SharedPreferencesSoundStore(this@MainActivity)
-                                            store.resetSoundUri(soundType)
-                                            soundStateVersion++
-                                        },
-                                        getSoundTitle = { soundType ->
-                                            @Suppress("UNUSED_VARIABLE")
-                                            val v = soundStateVersion
-                                            val store = SharedPreferencesSoundStore(this@MainActivity)
-                                            val storedUri = store.getSoundUri(soundType)
-                                            if (storedUri.isNullOrBlank()) {
-                                                "System Default"
-                                            } else {
-                                                SoundResolver.getSoundTitle(this@MainActivity, Uri.parse(storedUri))
-                                            }
-                                        },
-                                        onReminderClick = { reminder -> selectedReminderId = reminder.id },
-                                        onPlanClick = { planId -> selectedPlanId = planId },
-                                        onTabSelected = { screen -> activeTab = screen },
-                                        onEvent = { event ->
-                                            reminderBloc.onEvent(event)
-                                        },
-                                        onSheetClosed = {
-                                            initialSheetShow = false
-                                            taskPreselectedPlanId = null
-                                            taskPreselectedReminderId = null
-                                        }
-                                    )
+                                val density = LocalDensity.current
+                                val mainDestinationKey = remember(selectedUiItem, selectedPlanId) {
+                                    when {
+                                        selectedUiItem != null -> "reminder_detail_${selectedUiItem.occurrenceId}"
+                                        selectedPlanId != null -> "plan_detail_${selectedPlanId}"
+                                        else -> "main"
+                                    }
                                 }
+
+                                AnimatedContent(
+                                    targetState = mainDestinationKey,
+                                    transitionSpec = {
+                                        if (targetState == "main") {
+                                            TskRMotion.popEnterTransition(density) togetherWith TskRMotion.popExitTransition(density)
+                                        } else {
+                                            TskRMotion.enterTransition(density) togetherWith TskRMotion.exitTransition(density)
+                                        }
+                                    },
+                                    label = "MainDestinationTransition",
+                                    modifier = Modifier.fillMaxSize()
+                                ) { targetKey ->
+                                    if (targetKey.startsWith("reminder_detail_") && selectedUiItem != null) {
+                                        ReminderDetailScreen(
+                                            item = selectedUiItem,
+                                            personalityEngine = personalityEngine,
+                                            onEvent = { reminderBloc.onEvent(it) },
+                                            onEditTask = { templateId ->
+                                                selectedReminderId = null
+                                                taskPreselectedReminderId = templateId
+                                                initialSheetShow = true
+                                            },
+                                            onBack = { selectedReminderId = null }
+                                        )
+                                    } else if (targetKey.startsWith("plan_detail_") && selectedPlanId != null) {
+                                        PlanDetailScreen(
+                                            planId = selectedPlanId!!,
+                                            state = state ?: ReminderState(),
+                                            onEvent = { reminderBloc.onEvent(it) },
+                                            onEditPlan = { plan ->
+                                                editingPlan = plan
+                                                showPlanSheet = true
+                                            },
+                                            onCreateTaskForPlan = { planId ->
+                                                selectedPlanId = null
+                                                taskPreselectedPlanId = planId
+                                                initialSheetShow = true
+                                            },
+                                            onBack = { selectedPlanId = null }
+                                        )
+                                    } else {
+                                        ReminderScreen(
+                                            state = state,
+                                            personalityEngine = personalityEngine,
+                                            initialScreen = activeTab,
+                                            initialShowBottomSheet = initialSheetShow,
+                                            preselectedPlanId = taskPreselectedPlanId,
+                                            initialEditingReminderId = taskPreselectedReminderId,
+                                            isExactAlarmAllowed = isExactAlarmAllowed.value,
+                                            isBatteryOptimizationIgnored = isBatteryOptimizationIgnored.value,
+                                            appVersion = getAppVersion(),
+                                            onOpenAlarmSettings = { checkAndRequestExactAlarmPermission() },
+                                            onOpenBatterySettings = { openBatterySettings() },
+                                            onPickSound = { soundType -> launchSoundPicker(soundType) },
+                                            onResetSound = { soundType ->
+                                                val store = SharedPreferencesSoundStore(this@MainActivity)
+                                                store.resetSoundUri(soundType)
+                                                soundStateVersion++
+                                            },
+                                            getSoundTitle = { soundType ->
+                                                @Suppress("UNUSED_VARIABLE")
+                                                val v = soundStateVersion
+                                                val store = SharedPreferencesSoundStore(this@MainActivity)
+                                                val storedUri = store.getSoundUri(soundType)
+                                                if (storedUri.isNullOrBlank()) {
+                                                    "System Default"
+                                                } else {
+                                                    SoundResolver.getSoundTitle(this@MainActivity, Uri.parse(storedUri))
+                                                }
+                                            },
+                                            onOpenWhatsNew = { showWhatsNewReplay = true },
+                                            currentThemeMode = currentThemeMode,
+                                            onThemeModeChange = { newMode ->
+                                                sharedPref.edit { putString("theme_mode", newMode.name) }
+                                                currentThemeMode = newMode
+                                            },
+                                            onReminderClick = { reminder -> selectedReminderId = reminder.id },
+                                            onPlanClick = { planId -> selectedPlanId = planId },
+                                            onTabSelected = { screen -> activeTab = screen },
+                                            onEvent = { event ->
+                                                reminderBloc.onEvent(event)
+                                            },
+                                            onSheetClosed = {
+                                                initialSheetShow = false
+                                                taskPreselectedPlanId = null
+                                                taskPreselectedReminderId = null
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (showPlanSheet) {
+                                AddPlanBottomSheet(
+                                    planToEdit = editingPlan,
+                                    sheetState = planSheetState,
+                                    onDismiss = {
+                                        showPlanSheet = false
+                                        editingPlan = null
+                                    },
+                                    onSave = { name, description, icon, deadline, category, categorySource, color, colorSource ->
+                                        val editPln = editingPlan
+                                        if (editPln != null) {
+                                            reminderBloc.onEvent(
+                                                ReminderEvent.UpdatePlan(
+                                                    editPln.copy(
+                                                        name = name,
+                                                        description = description,
+                                                        icon = icon,
+                                                        deadline = deadline,
+                                                        category = category,
+                                                        categorySource = categorySource,
+                                                        color = color,
+                                                        colorSource = colorSource
+                                                    )
+                                                )
+                                            )
+                                        } else {
+                                            reminderBloc.onEvent(
+                                                ReminderEvent.AddPlan(
+                                                    name = name,
+                                                    description = description,
+                                                    icon = icon,
+                                                    deadline = deadline,
+                                                    category = category,
+                                                    categorySource = categorySource,
+                                                    color = color,
+                                                    colorSource = colorSource
+                                                )
+                                            )
+                                        }
+                                        showPlanSheet = false
+                                        editingPlan = null
+                                    }
+                                )
                             }
                         }
                     }

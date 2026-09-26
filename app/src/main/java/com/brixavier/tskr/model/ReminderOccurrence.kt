@@ -22,6 +22,8 @@ import java.util.UUID
  * @property notify7Days Whether 7-day advance warning alert is enabled.
  * @property notify24Hours Whether 24-hour advance warning alert is enabled.
  * @property notifyDueNow Whether at-scheduled-time alert is enabled.
+ * @property planId Foreign key referencing parent Plan (nullable).
+ * @property snoozeCount Historical count of times this exact occurrence has been snoozed.
  */
 @Entity(
     tableName = "reminder_occurrences",
@@ -61,7 +63,8 @@ data class ReminderOccurrence(
     val notify7Days: Boolean = false,
     val notify24Hours: Boolean = false,
     val notifyDueNow: Boolean = true,
-    val planId: String? = null
+    val planId: String? = null,
+    val snoozeCount: Int = 0
 ) {
     companion object {
         const val STATUS_PENDING = "PENDING"

@@ -7,7 +7,9 @@ import androidx.lifecycle.viewModelScope
 import com.brixavier.tskr.data.ReminderDao
 import com.brixavier.tskr.engine.RecurrenceEngine
 import com.brixavier.tskr.model.Plan
+import com.brixavier.tskr.model.PlanNoteSection
 import com.brixavier.tskr.model.PlanProgress
+import com.brixavier.tskr.model.PlanStep
 import com.brixavier.tskr.model.Reminder
 import com.brixavier.tskr.model.ReminderOccurrence
 import com.brixavier.tskr.model.ReminderUiItem
@@ -50,7 +52,9 @@ data class ReminderState(
     val userMessage: String? = null,
     val userMessageAction: ActionType? = null,
     val streak: Int = 0,
-    val weeklyProgress: WeeklyProgress = WeeklyProgress()
+    val weeklyProgress: WeeklyProgress = WeeklyProgress(),
+    val noteSections: List<PlanNoteSection> = emptyList(),
+    val planSteps: List<PlanStep> = emptyList()
 )
 
 /**
@@ -70,7 +74,13 @@ sealed class ReminderEvent {
         val notify7Days: Boolean = false,
         val notify24Hours: Boolean = false,
         val notifyDueNow: Boolean = true,
-        val planId: String? = null
+        val planId: String? = null,
+        val recurrenceDaysOfWeek: String = "",
+        val recurrenceMonthlyMode: String = Reminder.MONTHLY_MODE_DAY_OF_MONTH,
+        val recurrenceYearlyMode: String = Reminder.YEARLY_MODE_SPECIFIC_DATE,
+        val recurrenceOrdinal: String = "",
+        val recurrenceWeekday: String = "",
+        val recurrenceYearlyMonth: Int = 0
     ) : ReminderEvent()
     data class ToggleReminder(val id: String, val isActive: Boolean) : ReminderEvent()
     data class DeleteReminder(val id: String) : ReminderEvent()
@@ -78,9 +88,29 @@ sealed class ReminderEvent {
     data class SnoozeReminder(val occurrenceId: String) : ReminderEvent()
     data class ToggleChecklistItem(val occurrenceId: String, val stepIndex: Int, val isChecked: Boolean) : ReminderEvent()
 
-    data class AddPlan(val name: String, val description: String, val icon: String, val deadline: String?) : ReminderEvent()
+    data class AddPlan(
+        val id: String = UUID.randomUUID().toString(),
+        val name: String,
+        val description: String = "",
+        val icon: String = "",
+        val deadline: String? = null,
+        val category: String = "PERSONAL",
+        val categorySource: String = "AUTOMATIC",
+        val color: String = "SLATE",
+        val colorSource: String = "CATEGORY"
+    ) : ReminderEvent()
     data class UpdatePlan(val plan: Plan) : ReminderEvent()
     data class DeletePlan(val id: String) : ReminderEvent()
+
+    data class AddNoteSection(val planId: String, val title: String, val content: String = "") : ReminderEvent()
+    data class UpdateNoteSection(val section: PlanNoteSection) : ReminderEvent()
+    data class DeleteNoteSection(val section: PlanNoteSection) : ReminderEvent()
+    data class ReorderNoteSections(val sections: List<PlanNoteSection>) : ReminderEvent()
+
+    data class AddPlanStep(val planId: String, val text: String) : ReminderEvent()
+    data class UpdatePlanStep(val step: PlanStep) : ReminderEvent()
+    data class DeletePlanStep(val step: PlanStep) : ReminderEvent()
+    data class ReorderPlanSteps(val steps: List<PlanStep>) : ReminderEvent()
 
     object ClearUserMessage : ReminderEvent()
     object LoadReminders : ReminderEvent()
@@ -112,12 +142,21 @@ class ReminderBloc(
 
         viewModelScope.launch {
             combine(
-                reminderDao.getAllRemindersFlow(),
-                reminderDao.getPendingOccurrencesFlow(),
-                reminderDao.getCompletedOccurrencesFlow(),
-                reminderDao.getAllPlansFlow(),
-                reminderDao.getAllPlanProgressFlow()
-            ) { templates, pendingList, completedList, plansList, progressList ->
+                combine(
+                    reminderDao.getAllRemindersFlow(),
+                    reminderDao.getPendingOccurrencesFlow(),
+                    reminderDao.getCompletedOccurrencesFlow(),
+                    reminderDao.getAllPlansFlow()
+                ) { r1, r2, r3, r4 -> arrayOf(r1, r2, r3, r4) },
+                reminderDao.getAllPlanProgressFlow(),
+                reminderDao.getAllNoteSectionsFlow(),
+                reminderDao.getAllPlanStepsFlow()
+            ) { tuple, progressList, sectionsList, stepsList ->
+                @Suppress("UNCHECKED_CAST") val templates = tuple[0] as List<Reminder>
+                @Suppress("UNCHECKED_CAST") val pendingList = tuple[1] as List<ReminderOccurrence>
+                @Suppress("UNCHECKED_CAST") val completedList = tuple[2] as List<ReminderOccurrence>
+                @Suppress("UNCHECKED_CAST") val plansList = tuple[3] as List<Plan>
+
                 val items = mapToUiItems(templates, pendingList, completedList, plansList)
                 val streak = sharedPrefs.getInt("streak_count", 0)
 
@@ -134,7 +173,9 @@ class ReminderBloc(
                     planProgress = progressList,
                     isLoading = false,
                     streak = streak,
-                    weeklyProgress = weeklyProg
+                    weeklyProgress = weeklyProg,
+                    noteSections = sectionsList,
+                    planSteps = stepsList
                 )
             }.collect { newState ->
                 _state.update { oldState ->
@@ -170,7 +211,13 @@ class ReminderBloc(
                     event.notify7Days,
                     event.notify24Hours,
                     event.notifyDueNow,
-                    event.planId
+                    event.planId,
+                    event.recurrenceDaysOfWeek,
+                    event.recurrenceMonthlyMode,
+                    event.recurrenceYearlyMode,
+                    event.recurrenceOrdinal,
+                    event.recurrenceWeekday,
+                    event.recurrenceYearlyMonth
                 )
                 is ReminderEvent.ToggleReminder -> handleToggleReminder(event.id, event.isActive)
                 is ReminderEvent.DeleteReminder -> handleDeleteReminder(event.id)
@@ -178,9 +225,22 @@ class ReminderBloc(
                 is ReminderEvent.SnoozeReminder -> handleSnoozeReminder(event.occurrenceId)
                 is ReminderEvent.ToggleChecklistItem -> handleToggleChecklistItem(event.occurrenceId, event.stepIndex, event.isChecked)
 
-                is ReminderEvent.AddPlan -> handleAddPlan(event.name, event.description, event.icon, event.deadline)
+                is ReminderEvent.AddPlan -> handleAddPlan(
+                    event.id, event.name, event.description, event.icon, event.deadline,
+                    event.category, event.categorySource, event.color, event.colorSource
+                )
                 is ReminderEvent.UpdatePlan -> handleUpdatePlan(event.plan)
                 is ReminderEvent.DeletePlan -> handleDeletePlan(event.id)
+
+                is ReminderEvent.AddNoteSection -> handleAddNoteSection(event.planId, event.title, event.content)
+                is ReminderEvent.UpdateNoteSection -> handleUpdateNoteSection(event.section)
+                is ReminderEvent.DeleteNoteSection -> handleDeleteNoteSection(event.section)
+                is ReminderEvent.ReorderNoteSections -> handleReorderNoteSections(event.sections)
+
+                is ReminderEvent.AddPlanStep -> handleAddPlanStep(event.planId, event.text)
+                is ReminderEvent.UpdatePlanStep -> handleUpdatePlanStep(event.step)
+                is ReminderEvent.DeletePlanStep -> handleDeletePlanStep(event.step)
+                is ReminderEvent.ReorderPlanSteps -> handleReorderPlanSteps(event.steps)
 
                 is ReminderEvent.ClearUserMessage -> {
                     _state.update { it?.copy(userMessage = null, userMessageAction = null, errorMessage = null) }
@@ -202,7 +262,13 @@ class ReminderBloc(
         notify7Days: Boolean = false,
         notify24Hours: Boolean = false,
         notifyDueNow: Boolean = true,
-        planId: String? = null
+        planId: String? = null,
+        recurrenceDaysOfWeek: String = "",
+        recurrenceMonthlyMode: String = Reminder.MONTHLY_MODE_DAY_OF_MONTH,
+        recurrenceYearlyMode: String = Reminder.YEARLY_MODE_SPECIFIC_DATE,
+        recurrenceOrdinal: String = "",
+        recurrenceWeekday: String = "",
+        recurrenceYearlyMonth: Int = 0
     ) {
         if (title.isBlank()) {
             _state.update { it?.copy(errorMessage = "Task name cannot be empty") }
@@ -227,7 +293,13 @@ class ReminderBloc(
             notify7Days = notify7Days,
             notify24Hours = notify24Hours,
             notifyDueNow = notifyDueNow,
-            planId = planId
+            planId = planId,
+            recurrenceDaysOfWeek = recurrenceDaysOfWeek,
+            recurrenceMonthlyMode = recurrenceMonthlyMode,
+            recurrenceYearlyMode = recurrenceYearlyMode,
+            recurrenceOrdinal = recurrenceOrdinal,
+            recurrenceWeekday = recurrenceWeekday,
+            recurrenceYearlyMonth = recurrenceYearlyMonth
         )
 
         val initialOccurrence = ReminderOccurrence(
@@ -342,7 +414,8 @@ class ReminderBloc(
             val snoozedOccurrence = occurrence.copy(
                 date = snoozeTime.format(dateFormatter),
                 time = snoozeTime.format(timeFormatter),
-                snoozedUntilMs = snoozeEpochMs
+                snoozedUntilMs = snoozeEpochMs,
+                snoozeCount = occurrence.snoozeCount + 1
             )
 
             reminderDao.updateOccurrence(snoozedOccurrence)
@@ -448,79 +521,52 @@ class ReminderBloc(
             return
         }
 
+        val updatedPending = withContext(Dispatchers.IO) {
+            // Atomic Room Transaction
+            reminderDao.updateReminderTransaction(reminder)
+        }
+
+        // Post-Transaction Side Effects (Alarms, Widget, Notifications)
         withContext(Dispatchers.IO) {
-            // 1. Update Room Database template and plan assignment transaction
-            reminderDao.assignTaskToPlanTransaction(reminder.id, reminder.planId)
-            reminderDao.update(reminder)
-
-            // 2. Sync pending occurrence for template
-            val pendingList = reminderDao.getOccurrencesForTemplate(reminder.id).filter { it.isPending() }
-            if (pendingList.isNotEmpty()) {
-                val existingPending = pendingList.first()
-
-                // Recalculate date if recurrence rule changed
-                val newDate = if (reminder.isRecurring()) {
-                    RecurrenceEngine.calculateNextDueDate(
-                        baseDateStr = reminder.date,
-                        recurrenceType = reminder.recurrenceType,
-                        recurrenceInterval = reminder.recurrenceInterval,
-                        afterDateStr = null
-                    ) ?: reminder.date
-                } else {
-                    reminder.date
-                }
-
-                val updatedPending = existingPending.copy(
-                    title = reminder.title,
-                    priority = reminder.priority,
-                    date = newDate,
-                    time = reminder.time,
-                    notify7Days = reminder.notify7Days,
-                    notify24Hours = reminder.notify24Hours,
-                    notifyDueNow = reminder.notifyDueNow,
-                    planId = reminder.planId
-                )
-                reminderDao.updateOccurrence(updatedPending)
-                reminderScheduler.cancelOccurrenceAlarms(existingPending.id)
+            if (updatedPending != null) {
+                reminderScheduler.cancelOccurrenceAlarms(updatedPending.id)
+                cancelNotification(updatedPending.id)
                 if (reminder.isActive) {
                     reminderScheduler.scheduleOccurrenceAlarms(updatedPending)
                 }
-            } else if (reminder.isActive) {
-                // If no pending occurrence existed, create initial
-                val newOcc = ReminderOccurrence(
-                    id = UUID.randomUUID().toString(),
-                    templateId = reminder.id,
-                    title = reminder.title,
-                    priority = reminder.priority,
-                    date = reminder.date,
-                    time = reminder.time,
-                    status = ReminderOccurrence.STATUS_PENDING,
-                    subTasksRaw = resetChecklistFromTemplate(reminder.subTasksRaw),
-                    notify7Days = reminder.notify7Days,
-                    notify24Hours = reminder.notify24Hours,
-                    notifyDueNow = reminder.notifyDueNow,
-                    planId = reminder.planId
-                )
-                reminderDao.insertOccurrence(newOcc)
-                reminderScheduler.scheduleOccurrenceAlarms(newOcc)
             }
-            
             updateWidget()
         }
+
         _state.update { it?.copy(userMessage = "Task updated.", userMessageAction = ActionType.TASK_UPDATED) }
     }
 
-    private suspend fun handleAddPlan(name: String, description: String, icon: String, deadline: String?) {
+    private suspend fun handleAddPlan(
+        id: String,
+        name: String,
+        description: String,
+        icon: String,
+        deadline: String?,
+        category: String = "PERSONAL",
+        categorySource: String = "AUTOMATIC",
+        color: String = "SLATE",
+        colorSource: String = "CATEGORY"
+    ) {
         if (name.isBlank()) {
             _state.update { it?.copy(errorMessage = "Plan name cannot be empty") }
             return
         }
 
         val newPlan = Plan(
+            id = id,
             name = name,
             description = description,
             icon = icon,
-            deadline = deadline
+            deadline = deadline,
+            category = category,
+            categorySource = categorySource,
+            color = color,
+            colorSource = colorSource
         )
 
         withContext(Dispatchers.IO) {
@@ -548,6 +594,76 @@ class ReminderBloc(
             reminderDao.deletePlanTransaction(id)
         }
         _state.update { it?.copy(userMessage = "Plan deleted.") }
+    }
+
+    private suspend fun handleAddNoteSection(planId: String, title: String, content: String) {
+        withContext(Dispatchers.IO) {
+            val existing = reminderDao.getNoteSectionsForPlan(planId)
+            val nextSortOrder = if (existing.isNotEmpty()) existing.maxOf { it.sortOrder } + 1 else 0
+            val section = PlanNoteSection(
+                planId = planId,
+                title = title,
+                content = content,
+                sortOrder = nextSortOrder
+            )
+            reminderDao.insertNoteSection(section)
+        }
+    }
+
+    private suspend fun handleUpdateNoteSection(section: PlanNoteSection) {
+        withContext(Dispatchers.IO) {
+            val updated = section.copy(updatedAtMs = System.currentTimeMillis())
+            reminderDao.updateNoteSection(updated)
+        }
+    }
+
+    private suspend fun handleDeleteNoteSection(section: PlanNoteSection) {
+        withContext(Dispatchers.IO) {
+            reminderDao.deleteNoteSection(section)
+        }
+    }
+
+    private suspend fun handleReorderNoteSections(sections: List<PlanNoteSection>) {
+        withContext(Dispatchers.IO) {
+            sections.forEachIndexed { index, sec ->
+                reminderDao.updateNoteSection(sec.copy(sortOrder = index, updatedAtMs = System.currentTimeMillis()))
+            }
+        }
+    }
+
+    private suspend fun handleAddPlanStep(planId: String, text: String) {
+        withContext(Dispatchers.IO) {
+            val existing = reminderDao.getStepsForPlan(planId)
+            val nextSortOrder = if (existing.isNotEmpty()) existing.maxOf { it.sortOrder } + 1 else 0
+            val step = PlanStep(
+                planId = planId,
+                text = text,
+                isCompleted = false,
+                sortOrder = nextSortOrder
+            )
+            reminderDao.insertStep(step)
+        }
+    }
+
+    private suspend fun handleUpdatePlanStep(step: PlanStep) {
+        withContext(Dispatchers.IO) {
+            val updated = step.copy(updatedAtMs = System.currentTimeMillis())
+            reminderDao.updateStep(updated)
+        }
+    }
+
+    private suspend fun handleDeletePlanStep(step: PlanStep) {
+        withContext(Dispatchers.IO) {
+            reminderDao.deleteStep(step)
+        }
+    }
+
+    private suspend fun handleReorderPlanSteps(steps: List<PlanStep>) {
+        withContext(Dispatchers.IO) {
+            steps.forEachIndexed { index, st ->
+                reminderDao.updateStep(st.copy(sortOrder = index, updatedAtMs = System.currentTimeMillis()))
+            }
+        }
     }
 
     private fun updateWidget() {
@@ -591,7 +707,8 @@ private fun mapToUiItems(
             notifyDueNow = occ.notifyDueNow,
             planId = plan?.id,
             planName = plan?.name,
-            planIcon = plan?.icon
+            planIcon = plan?.icon,
+            snoozeCount = occ.snoozeCount
         )
     }
 

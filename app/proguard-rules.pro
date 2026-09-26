@@ -12,8 +12,8 @@
 # Keep Room generated classes
 -keep class com.brixavier.tskr.data.*_Impl { *; }
 
-# Keep Glance Widget Receiver
--keep class com.brixavier.tskr.widget.TskRWidgetReceiver { *; }
+# Keep Glance Widget Receiver & Action Callbacks
+-keep class com.brixavier.tskr.widget.** { *; }
 
 # Strip Android debug logging in release builds
 -assumenosideeffects class android.util.Log {

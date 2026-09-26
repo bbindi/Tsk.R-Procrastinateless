@@ -88,6 +88,43 @@ object CalendarUtils {
     }
 
     /**
+     * Calculates the active task count for a specific LocalDate.
+     */
+    fun taskCountForDate(items: List<CalendarItem>, date: LocalDate): Int {
+        val dateStr = date.toString()
+        return items.count { it.date == dateStr && it.isActive }
+    }
+
+    /**
+     * Calculates capped density dot count (0, 1, 2, or 3 max) for a specific LocalDate.
+     */
+    fun getDensityDotCount(items: List<CalendarItem>, date: LocalDate): Int {
+        val count = taskCountForDate(items, date)
+        return count.coerceAtMost(3)
+    }
+
+    /**
+     * Generates an accessible semantic label for a calendar date cell.
+     */
+    fun getDateCellContentDescription(
+        date: LocalDate,
+        taskCount: Int,
+        isSelected: Boolean,
+        isToday: Boolean
+    ): String {
+        val formatter = DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy", Locale.US)
+        val dateFormatted = date.format(formatter)
+        val selectedPart = if (isSelected) ", selected" else ""
+        val todayPart = if (isToday) ", today" else ""
+        val taskPart = when (taskCount) {
+            0 -> ", no tasks scheduled"
+            1 -> ", 1 task scheduled"
+            else -> ", $taskCount tasks scheduled"
+        }
+        return "$dateFormatted$todayPart$selectedPart$taskPart"
+    }
+
+    /**
      * Generates a list of 7 WeekDay objects for the Monday-to-Sunday week containing the specified date.
      */
     fun getWeekDays(date: LocalDate, today: LocalDate = LocalDate.now()): List<WeekDay> {

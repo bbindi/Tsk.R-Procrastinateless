@@ -1,12 +1,17 @@
 package com.brixavier.tskr.ui
 
+import kotlin.math.roundToInt
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.rememberScrollState
@@ -18,14 +23,34 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.key
+import com.brixavier.tskr.model.MonthlyMode
+import com.brixavier.tskr.model.RecurrenceDayOfWeek
+import com.brixavier.tskr.model.RecurrenceOrdinal
+import com.brixavier.tskr.model.RecurrenceRule
+import com.brixavier.tskr.model.RecurrenceType
+import com.brixavier.tskr.model.YearlyMode
+import com.brixavier.tskr.model.PlanCategory
+import com.brixavier.tskr.model.CategorySource
+import com.brixavier.tskr.model.PlanColor
+import com.brixavier.tskr.model.ColorSource
+import com.brixavier.tskr.model.PlanCategoryClassifier
+import com.brixavier.tskr.model.PlanCategoryColorMapping
+import com.brixavier.tskr.ui.TskRPlanIcons
+import com.brixavier.tskr.ui.PlanColorResolver
+import com.brixavier.tskr.ui.theme.TskRMotion
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -36,6 +61,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import com.brixavier.tskr.bloc.ReminderEvent
+import com.brixavier.tskr.ui.theme.getStatusCompletedColor
+import com.brixavier.tskr.ui.theme.getStatusOverdueColor
+import com.brixavier.tskr.ui.theme.getStatusUpcomingColor
 import com.brixavier.tskr.bloc.ReminderState
 import com.brixavier.tskr.model.CalendarItem
 import com.brixavier.tskr.model.CalendarUtils
@@ -60,6 +88,7 @@ import androidx.compose.ui.platform.LocalContext
 
 import java.text.SimpleDateFormat
 import java.time.LocalDate
+import java.time.Month
 import java.time.format.DateTimeFormatter
 import java.util.*
 
@@ -125,11 +154,21 @@ fun TopBarHeader(
                 )
             )
             if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                )
+                AnimatedContent(
+                    targetState = subtitle,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(TskRMotion.DURATION_STANDARD)) +
+                         slideInVertically(animationSpec = tween(TskRMotion.DURATION_STANDARD), initialOffsetY = { it / 2 })) togetherWith
+                        (fadeOut(animationSpec = tween(TskRMotion.DURATION_STANDARD)))
+                    },
+                    label = "TopBarSubtitleTransition"
+                ) { targetSubtitle ->
+                    Text(
+                        text = targetSubtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                    )
+                }
             }
         }
         IconButton(onClick = onOpenSettings) {
@@ -357,7 +396,8 @@ fun TasksPage(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 120.dp),
+            .statusBarsPadding()
+            .padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         TopBarHeader(
@@ -366,8 +406,8 @@ fun TasksPage(
             onOpenSettings = onOpenSettings
         )
 
-        // Search Bar
-        OutlinedTextField(
+        // M3 Expressive Search Bar
+        TextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
             placeholder = { Text("Search tasks, notes, plans...") },
@@ -381,10 +421,13 @@ fun TasksPage(
             },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            shape = RoundedCornerShape(16.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+            shape = RoundedCornerShape(24.dp),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                disabledIndicatorColor = Color.Transparent
             )
         )
 
@@ -438,17 +481,19 @@ fun TasksPage(
                 }
             } else {
                 items(filteredReminders, key = { it.id }) { reminder ->
-                    ReminderCard(
-                        reminder = reminder,
-                        plans = state.plans,
-                        onClick = { onReminderClick(reminder) },
-                        onToggle = { isActive ->
-                            onEvent(ReminderEvent.ToggleReminder(reminder.id, isActive))
-                        },
-                        onDelete = {
-                            onEvent(ReminderEvent.DeleteReminder(reminder.id))
-                        }
-                    )
+                    Box(modifier = Modifier.animateItem()) {
+                        ReminderCard(
+                            reminder = reminder,
+                            plans = state.plans,
+                            onClick = { onReminderClick(reminder) },
+                            onToggle = { isActive ->
+                                onEvent(ReminderEvent.ToggleReminder(reminder.id, isActive))
+                            },
+                            onDelete = {
+                                onEvent(ReminderEvent.DeleteReminder(reminder.id))
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -477,7 +522,8 @@ fun PlansPage(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .statusBarsPadding()
+            .padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Row(
@@ -501,11 +547,6 @@ fun PlansPage(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalButton(onClick = onCreatePlanClick) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("New Plan")
-                }
                 IconButton(onClick = onOpenSettings) {
                     Icon(
                         imageVector = Icons.Default.Settings,
@@ -553,15 +594,23 @@ fun PlansPage(
             } else {
                 items(plans, key = { it.id }) { plan ->
                     val progress = state.planProgress.find { it.planId == plan.id } ?: PlanProgress(plan.id, 0, 0)
+                    val planAccentColor = PlanColorResolver.resolve(plan.resolveEffectiveColor(), isSystemInDarkTheme())
+                    val animatedPlanProgress by animateFloatAsState(
+                        targetValue = progress.progressRatio,
+                        animationSpec = tween(durationMillis = TskRMotion.DURATION_STANDARD, easing = TskRMotion.EasingStandard),
+                        label = "PlanCardProgressAnimation"
+                    )
 
                     Card(
                         modifier = Modifier
+                            .animateItem()
                             .fillMaxWidth()
                             .clickable { onPlanClick(plan.id) },
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                        )
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                        ),
+                        border = BorderStroke(1.5.dp, planAccentColor)
                     ) {
                         Column(
                             modifier = Modifier
@@ -578,18 +627,19 @@ fun PlansPage(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    if (plan.icon.isNotBlank()) {
-                                        Text(text = plan.icon, fontSize = 20.sp)
-                                    }
+                                    val planIcon = TskRPlanIcons.getIcon(plan.getPlanCategory())
+                                    val planAccentColor = PlanColorResolver.resolve(plan.resolveEffectiveColor(), isSystemInDarkTheme())
+                                    Icon(
+                                        imageVector = planIcon,
+                                        contentDescription = null,
+                                        tint = planAccentColor,
+                                        modifier = Modifier.size(24.dp)
+                                    )
                                     Text(
                                         text = plan.name,
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold
                                     )
-                                }
-
-                                IconButton(onClick = { onEditPlanClick(plan) }) {
-                                    Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(18.dp))
                                 }
                             }
 
@@ -608,10 +658,10 @@ fun PlansPage(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
-                                        text = if (progress.totalTasks == 0) "No tasks yet" else "${progress.completedTasks} / ${progress.totalTasks} completed",
+                                        text = if (progress.totalTasks == 0) "No steps yet" else "${progress.completedTasks} / ${progress.totalTasks} steps completed",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.SemiBold
+                                        color = MaterialTheme.colorScheme.tertiary,
+                                        fontWeight = FontWeight.Bold
                                     )
                                     if (!plan.deadline.isNullOrBlank()) {
                                         Text(
@@ -624,12 +674,12 @@ fun PlansPage(
 
                                 if (progress.totalTasks > 0) {
                                     LinearProgressIndicator(
-                                        progress = { progress.progressRatio },
+                                        progress = { animatedPlanProgress },
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(6.dp),
-                                        color = MaterialTheme.colorScheme.primary,
-                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                        color = MaterialTheme.colorScheme.tertiary,
+                                        trackColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f)
                                     )
                                 }
                             }
@@ -672,19 +722,27 @@ fun WeekViewStrip(
             }
             val hasOverdue = dayTasks.any { it.isOverdue }
             val hasImportant = dayTasks.any { it.isImportant() }
-            val hasTasks = dayTasks.isNotEmpty()
+            val taskCount = CalendarUtils.taskCountForDate(calendarItems, weekDay.date)
+            val dotCount = CalendarUtils.getDensityDotCount(calendarItems, weekDay.date)
+            val cellAccessibilityLabel = CalendarUtils.getDateCellContentDescription(
+                date = weekDay.date,
+                taskCount = taskCount,
+                isSelected = isSelected,
+                isToday = weekDay.isToday
+            )
 
             Card(
                 modifier = Modifier
                     .weight(1f)
                     .height(84.dp)
+                    .semantics { contentDescription = cellAccessibilityLabel }
                     .clickable { onDateSelected(weekDay.date) },
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = when {
                         isSelected -> MaterialTheme.colorScheme.primary
                         weekDay.isToday -> MaterialTheme.colorScheme.secondaryContainer
-                        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
                     }
                 )
             ) {
@@ -715,21 +773,32 @@ fun WeekViewStrip(
                         }
                     )
 
-                    // Indicator Dot
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .background(
-                                color = when {
-                                    !hasTasks -> Color.Transparent
-                                    isSelected -> MaterialTheme.colorScheme.onPrimary
-                                    hasOverdue -> MaterialTheme.colorScheme.error
-                                    hasImportant -> MaterialTheme.colorScheme.error
-                                    else -> MaterialTheme.colorScheme.primary
-                                },
-                                shape = CircleShape
-                            )
-                    )
+                    // 0 / 1 / 2 / 3+ Task-Density Indicator Dots
+                    if (dotCount > 0) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val dotColor = when {
+                                isSelected -> MaterialTheme.colorScheme.onPrimary
+                                hasOverdue || hasImportant -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.primary
+                            }
+
+                            repeat(dotCount) { dotIdx ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(4.dp)
+                                        .background(
+                                            color = if (dotIdx == 0) dotColor else dotColor.copy(alpha = 0.8f),
+                                            shape = CircleShape
+                                        )
+                                )
+                            }
+                        }
+                    } else {
+                        Box(modifier = Modifier.size(4.dp))
+                    }
                 }
             }
         }
@@ -787,7 +856,14 @@ fun MonthViewGrid(
                     }
                     val hasOverdue = dayTasks.any { it.isOverdue }
                     val hasImportant = dayTasks.any { it.isImportant() }
-                    val hasTasks = dayTasks.isNotEmpty()
+                    val taskCount = CalendarUtils.taskCountForDate(calendarItems, dayCell.date)
+                    val dotCount = CalendarUtils.getDensityDotCount(calendarItems, dayCell.date)
+                    val cellAccessibilityLabel = CalendarUtils.getDateCellContentDescription(
+                        date = dayCell.date,
+                        taskCount = taskCount,
+                        isSelected = isSelected,
+                        isToday = dayCell.isToday
+                    )
 
                     Box(
                         modifier = Modifier
@@ -798,9 +874,10 @@ fun MonthViewGrid(
                                 when {
                                     isSelected -> MaterialTheme.colorScheme.primary
                                     dayCell.isToday -> MaterialTheme.colorScheme.secondaryContainer
-                                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                 }
                             )
+                            .semantics { contentDescription = cellAccessibilityLabel }
                             .clickable { onDateSelected(dayCell.date) },
                         contentAlignment = Alignment.Center
                     ) {
@@ -820,8 +897,8 @@ fun MonthViewGrid(
                                 }
                             )
 
-                            // Indicator Dots
-                            if (hasTasks) {
+                            // 0 / 1 / 2 / 3+ Task-Density Indicator Dots
+                            if (dotCount > 0) {
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -829,22 +906,18 @@ fun MonthViewGrid(
                                 ) {
                                     val dotColor = when {
                                         isSelected -> MaterialTheme.colorScheme.onPrimary
-                                        hasOverdue -> MaterialTheme.colorScheme.error
-                                        hasImportant -> MaterialTheme.colorScheme.error
+                                        hasOverdue || hasImportant -> MaterialTheme.colorScheme.error
                                         else -> MaterialTheme.colorScheme.primary
                                     }
 
-                                    Box(
-                                        modifier = Modifier
-                                            .size(5.dp)
-                                            .background(dotColor, CircleShape)
-                                    )
-
-                                    if (dayTasks.size > 1) {
+                                    repeat(dotCount) { dotIdx ->
                                         Box(
                                             modifier = Modifier
-                                                .size(5.dp)
-                                                .background(dotColor.copy(alpha = 0.7f), CircleShape)
+                                                .size(4.dp)
+                                                .background(
+                                                    color = if (dotIdx == 0) dotColor else dotColor.copy(alpha = 0.8f),
+                                                    shape = CircleShape
+                                                )
                                         )
                                     }
                                 }
@@ -886,27 +959,46 @@ fun DayViewTimeline(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (sortedDayItems.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "No commitments scheduled for $fullDateHeader.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-                    textAlign = TextAlign.Center
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
                 )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.EventAvailable,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Text(
+                        text = "No Commitments Scheduled",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Your schedule for $fullDateHeader is completely clear.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
+            Column(
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(sortedDayItems, key = { it.id }) { item ->
+                sortedDayItems.forEach { item ->
                     val masterTemplate = state.reminders.find { it.id == item.templateId }
                     if (masterTemplate != null) {
                         Row(
@@ -918,7 +1010,7 @@ fun DayViewTimeline(
                                 text = item.time,
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = if (item.isOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.width(52.dp)
                             )
 
@@ -932,7 +1024,7 @@ fun DayViewTimeline(
                                     plans = state.plans,
                                     onClick = { onReminderClick(masterTemplate) },
                                     onToggle = { isActive ->
-                                        onEvent(ReminderEvent.ToggleReminder(masterTemplate.id, isActive))
+                                        onEvent(ReminderEvent.ToggleReminder(item.occurrenceId ?: masterTemplate.id, isActive))
                                     },
                                     onDelete = {
                                         onEvent(ReminderEvent.DeleteReminder(masterTemplate.id))
@@ -961,6 +1053,8 @@ fun CalendarPage(
     var viewMode by remember { mutableStateOf(CalendarViewMode.MONTH) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var displayedYearMonth by remember { mutableStateOf(YearMonth.now()) }
+    var slideDirection by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
 
     fun selectDate(newDate: LocalDate) {
         selectedDate = newDate
@@ -996,7 +1090,9 @@ fun CalendarPage(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 120.dp),
+            .statusBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         TopBarHeader(
@@ -1031,6 +1127,7 @@ fun CalendarPage(
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 IconButton(onClick = {
+                    slideDirection = -1
                     when (viewMode) {
                         CalendarViewMode.MONTH -> {
                             val nextYm = displayedYearMonth.minusMonths(1)
@@ -1044,12 +1141,14 @@ fun CalendarPage(
                 }
 
                 TextButton(onClick = {
+                    slideDirection = if (LocalDate.now().isAfter(selectedDate)) 1 else -1
                     selectDate(LocalDate.now())
                 }) {
                     Text("Today", fontWeight = FontWeight.Bold)
                 }
 
                 IconButton(onClick = {
+                    slideDirection = 1
                     when (viewMode) {
                         CalendarViewMode.MONTH -> {
                             val nextYm = displayedYearMonth.plusMonths(1)
@@ -1073,26 +1172,74 @@ fun CalendarPage(
             }
         }
 
-        Text(
-            text = rangeTitle,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
+        // Month / Week View Containers with directional transition
+        AnimatedContent(
+            targetState = Triple(viewMode, displayedYearMonth, selectedDate),
+            transitionSpec = {
+                val dir = slideDirection
+                val slidePx = with(density) { 12.dp.roundToPx() }
+                if (targetState.first != initialState.first) {
+                    TskRMotion.tabTransition()
+                } else {
+                    if (dir >= 0) {
+                        (slideInHorizontally(animationSpec = tween(TskRMotion.DURATION_STANDARD), initialOffsetX = { slidePx }) + fadeIn(animationSpec = tween(TskRMotion.DURATION_STANDARD))) togetherWith
+                        (slideOutHorizontally(animationSpec = tween(TskRMotion.DURATION_STANDARD), targetOffsetX = { -slidePx }) + fadeOut(animationSpec = tween(TskRMotion.DURATION_STANDARD)))
+                    } else {
+                        (slideInHorizontally(animationSpec = tween(TskRMotion.DURATION_STANDARD), initialOffsetX = { -slidePx }) + fadeIn(animationSpec = tween(TskRMotion.DURATION_STANDARD))) togetherWith
+                        (slideOutHorizontally(animationSpec = tween(TskRMotion.DURATION_STANDARD), targetOffsetX = { slidePx }) + fadeOut(animationSpec = tween(TskRMotion.DURATION_STANDARD)))
+                    }
+                }
+            },
+            label = "CalendarPeriodTransition",
+            modifier = Modifier.fillMaxWidth()
+        ) { stateTriple ->
+            val vm = stateTriple.first
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = rangeTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
 
-        // Month / Week View Containers
-        if (viewMode == CalendarViewMode.MONTH) {
-            MonthViewGrid(
-                displayedYearMonth = displayedYearMonth,
-                selectedDate = selectedDate,
-                calendarItems = calendarItems,
-                onDateSelected = { selectDate(it) }
+                if (vm == CalendarViewMode.MONTH) {
+                    MonthViewGrid(
+                        displayedYearMonth = displayedYearMonth,
+                        selectedDate = selectedDate,
+                        calendarItems = calendarItems,
+                        onDateSelected = { selectDate(it) }
+                    )
+                } else if (vm == CalendarViewMode.WEEK) {
+                    WeekViewStrip(
+                        selectedDate = selectedDate,
+                        calendarItems = calendarItems,
+                        onDateSelected = { selectDate(it) }
+                    )
+                }
+            }
+        }
+
+        // Selected-Date Agenda Section Header
+        val selectedDateHeader = remember(selectedDate) {
+            selectedDate.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.US))
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Schedule for $selectedDateHeader",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
             )
-        } else if (viewMode == CalendarViewMode.WEEK) {
-            WeekViewStrip(
-                selectedDate = selectedDate,
-                calendarItems = calendarItems,
-                onDateSelected = { selectDate(it) }
+            Text(
+                text = if (dayItems.isEmpty()) "0 tasks" else "${dayItems.size} task${if (dayItems.size > 1) "s" else ""}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold
             )
         }
 
@@ -1132,6 +1279,9 @@ fun ReminderScreen(
     onPickSound: (SoundType) -> Unit = {},
     onResetSound: (SoundType) -> Unit = {},
     getSoundTitle: (SoundType) -> String = { "System Default" },
+    onOpenWhatsNew: () -> Unit = {},
+    currentThemeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    onThemeModeChange: (AppThemeMode) -> Unit = {},
     onEvent: (ReminderEvent) -> Unit,
     onReminderClick: (Reminder) -> Unit = {},
     onPlanClick: (String) -> Unit = {},
@@ -1208,26 +1358,34 @@ fun ReminderScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = Color.Transparent,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            when (currentScreen) {
-                Screen.Home -> {
-                    LazyColumn(
+            AnimatedContent(
+                targetState = currentScreen,
+                transitionSpec = { TskRMotion.tabTransition() },
+                label = "TabScreenTransition",
+                modifier = Modifier.fillMaxSize()
+            ) { targetScreen ->
+                when (targetScreen) {
+                    Screen.Home -> {
+                        LazyColumn(
                         state = homeLazyListState,
                         contentPadding = PaddingValues(
                             start = 20.dp,
                             end = 20.dp,
-                            top = 24.dp,
-                            bottom = 120.dp
+                            top = 16.dp,
+                            bottom = 100.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier
                             .fillMaxSize()
+                            .statusBarsPadding()
                             .animateContentSize()
                     ) {
                         // 1. Centered Header & Greeting
@@ -1309,20 +1467,22 @@ fun ReminderScreen(
                             }
                         }
 
-                        // 2. Weekly Progress Card
+                        // 2. Weekly Progress Card (Hero Container)
                         item {
                             val wp = state.weeklyProgress
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(24.dp),
+                                shape = RoundedCornerShape(28.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                                )
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                             ) {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(20.dp)
+                                        .padding(horizontal = 20.dp, vertical = 18.dp)
                                 ) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -1331,45 +1491,45 @@ fun ReminderScreen(
                                     ) {
                                         Text(
                                             text = "Weekly Progress",
-                                            style = MaterialTheme.typography.titleMedium.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                                            ),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
                                         )
                                         Text(
                                             text = "${wp.progressPercent}%",
-                                            style = MaterialTheme.typography.titleMedium.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary
-                                            ),
-                                            maxLines = 1
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
                                         )
                                     }
-                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    val animatedWpProgress by animateFloatAsState(
+                                        targetValue = wp.progressRatio,
+                                        animationSpec = tween(durationMillis = TskRMotion.DURATION_STANDARD, easing = TskRMotion.EasingStandard),
+                                        label = "WeeklyProgressAnimation"
+                                    )
                                     LinearProgressIndicator(
-                                        progress = { wp.progressRatio },
+                                        progress = { animatedWpProgress },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(8.dp),
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(4.dp)),
                                         color = MaterialTheme.colorScheme.primary,
-                                        trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f),
-                                        strokeCap = StrokeCap.Round
+                                        trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
                                     )
-                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
                                     Text(
                                         text = if (wp.totalScheduledCount > 0) {
                                             "${wp.completedCount} of ${wp.totalScheduledCount} scheduled tasks completed this week"
                                         } else {
                                             "No tasks scheduled for this week."
                                         },
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            fontWeight = FontWeight.Medium,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        ),
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                                     )
                                 }
                             }
@@ -1401,19 +1561,27 @@ fun ReminderScreen(
                                             currentScreen = Screen.Tasks
                                         },
                                         modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
                                     ) {
                                         Column(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            modifier = Modifier.padding(14.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Default.TaskAlt,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.TaskAlt,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
                                             Text(
                                                 text = "$pendingCount",
                                                 style = MaterialTheme.typography.titleLarge,
@@ -1422,7 +1590,7 @@ fun ReminderScreen(
                                             )
                                             Text(
                                                 text = "Pending",
-                                                style = MaterialTheme.typography.labelSmall,
+                                                style = MaterialTheme.typography.labelMedium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
@@ -1437,19 +1605,27 @@ fun ReminderScreen(
                                             currentScreen = Screen.Tasks
                                         },
                                         modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
                                     ) {
                                         Column(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            modifier = Modifier.padding(14.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Repeat,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.secondary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Repeat,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
                                             Text(
                                                 text = "$recurringCount",
                                                 style = MaterialTheme.typography.titleLarge,
@@ -1458,7 +1634,7 @@ fun ReminderScreen(
                                             )
                                             Text(
                                                 text = "Recurring",
-                                                style = MaterialTheme.typography.labelSmall,
+                                                style = MaterialTheme.typography.labelMedium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
@@ -1470,19 +1646,27 @@ fun ReminderScreen(
                                     Surface(
                                         onClick = { currentScreen = Screen.Plans },
                                         modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
                                     ) {
                                         Column(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            modifier = Modifier.padding(14.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Flag,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.tertiary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(MaterialTheme.colorScheme.tertiaryContainer),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Flag,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
                                             Text(
                                                 text = "$activePlansCount",
                                                 style = MaterialTheme.typography.titleLarge,
@@ -1491,7 +1675,7 @@ fun ReminderScreen(
                                             )
                                             Text(
                                                 text = "Plans",
-                                                style = MaterialTheme.typography.labelSmall,
+                                                style = MaterialTheme.typography.labelMedium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
@@ -1650,11 +1834,14 @@ fun ReminderScreen(
                                         }
                                     }
                                 } else {
-                                    Text(
-                                        text = "No active recurring tasks.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-                                        modifier = Modifier.padding(vertical = 8.dp)
+                                    DashboardEmptyStateCard(
+                                        title = "No recurring routines yet",
+                                        prompt = "Consistency is kryptonite to procrastination.",
+                                        buttonText = "+ Add",
+                                        onClick = {
+                                            tasksInitialFilter = TaskFilter.RECURRING
+                                            currentScreen = Screen.Tasks
+                                        }
                                     )
                                 }
                             }
@@ -1687,13 +1874,17 @@ fun ReminderScreen(
                                 if (activePlans.isNotEmpty()) {
                                     activePlans.forEach { plan ->
                                         val progress = state.planProgress.find { it.planId == plan.id } ?: PlanProgress(plan.id, 0, 0)
+                                        val planIcon = TskRPlanIcons.getIcon(plan.getPlanCategory())
+                                        val planAccentColor = PlanColorResolver.resolve(plan.resolveEffectiveColor(), isSystemInDarkTheme())
+
                                         Surface(
                                             onClick = { currentScreen = Screen.Plans },
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(vertical = 4.dp),
                                             shape = RoundedCornerShape(16.dp),
-                                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                                            border = BorderStroke(1.dp, planAccentColor.copy(alpha = 0.6f))
                                         ) {
                                             Column(
                                                 modifier = Modifier.padding(14.dp),
@@ -1710,43 +1901,49 @@ fun ReminderScreen(
                                                         modifier = Modifier.weight(1f)
                                                     ) {
                                                         Icon(
-                                                            imageVector = Icons.Default.Flag,
+                                                            imageVector = planIcon,
                                                             contentDescription = null,
-                                                            tint = MaterialTheme.colorScheme.primary,
+                                                            tint = planAccentColor,
                                                             modifier = Modifier.size(18.dp)
                                                         )
                                                         Text(
                                                             text = plan.name,
                                                             style = MaterialTheme.typography.titleMedium,
                                                             fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onSurface,
                                                             maxLines = 1,
                                                             overflow = TextOverflow.Ellipsis
                                                         )
                                                     }
                                                     Spacer(modifier = Modifier.width(8.dp))
                                                     Text(
-                                                        text = if (progress.totalTasks > 0) "${(progress.progressRatio * 100).toInt()}%" else "0%",
+                                                        text = if (progress.totalTasks > 0) "${(progress.progressRatio * 100).roundToInt()}%" else "0%",
                                                         style = MaterialTheme.typography.labelLarge,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.primary,
+                                                        color = MaterialTheme.colorScheme.onSurface,
                                                         maxLines = 1
                                                     )
                                                 }
 
+                                                val animatedDashboardPlanProgress by animateFloatAsState(
+                                                    targetValue = progress.progressRatio,
+                                                    animationSpec = tween(durationMillis = TskRMotion.DURATION_STANDARD, easing = TskRMotion.EasingStandard),
+                                                    label = "DashboardPlanProgressAnimation"
+                                                )
                                                 LinearProgressIndicator(
-                                                    progress = { progress.progressRatio },
+                                                    progress = { animatedDashboardPlanProgress },
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .height(6.dp),
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    trackColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.15f),
+                                                    color = planAccentColor,
+                                                    trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                                                     strokeCap = StrokeCap.Round
                                                 )
 
                                                 Text(
-                                                    text = if (progress.totalTasks == 0) "No tasks assigned" else "${progress.completedTasks} of ${progress.totalTasks} tasks completed",
+                                                    text = if (progress.totalTasks == 0) "No steps yet" else "${progress.completedTasks} of ${progress.totalTasks} steps completed",
                                                     style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
@@ -1754,11 +1951,14 @@ fun ReminderScreen(
                                         }
                                     }
                                 } else {
-                                    Text(
-                                        text = "No active plans.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-                                        modifier = Modifier.padding(vertical = 8.dp)
+                                    DashboardEmptyStateCard(
+                                        title = "No active plans",
+                                        prompt = "Break big goals into simple steps.",
+                                        buttonText = "+ Create",
+                                        onClick = {
+                                            editingPlan = null
+                                            showPlanSheet = true
+                                        }
                                     )
                                 }
                             }
@@ -1804,20 +2004,25 @@ fun ReminderScreen(
                         isExactAlarmAllowed = isExactAlarmAllowed,
                         isBatteryOptimizationIgnored = isBatteryOptimizationIgnored,
                         appVersion = appVersion,
+                        currentThemeMode = currentThemeMode,
                         onOpenAlarmSettings = onOpenAlarmSettings,
                         onOpenBatterySettings = onOpenBatterySettings,
                         onPickSound = onPickSound,
                         onResetSound = onResetSound,
-                        getSoundTitle = getSoundTitle
+                        getSoundTitle = getSoundTitle,
+                        onOpenWhatsNew = onOpenWhatsNew,
+                        onThemeModeChange = onThemeModeChange
                     )
                 }
+            }
             }
 
             // V1-inspired Pill Navigation Bar + Universal "+" Action Button
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 32.dp, start = 16.dp, end = 16.dp)
+                    .navigationBarsPadding()
+                    .padding(bottom = 8.dp, start = 16.dp, end = 16.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -1828,14 +2033,10 @@ fun ReminderScreen(
                     Surface(
                         modifier = Modifier
                             .height(64.dp)
-                            .shadow(8.dp, CircleShape)
-                            .border(
-                                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                                CircleShape
-                            ),
+                            .shadow(8.dp, CircleShape),
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
-                        tonalElevation = 12.dp
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        tonalElevation = 4.dp
                     ) {
                         Row(
                             modifier = Modifier
@@ -1851,6 +2052,22 @@ fun ReminderScreen(
                                 Triple(Screen.Calendar, Icons.Default.CalendarToday, "Calendar")
                             )
 
+                            val tabAnimatable = remember { Animatable(1f) }
+                            var previousScreen by remember { mutableStateOf(currentScreen) }
+                            val density = LocalDensity.current
+                            val arcHeightPx = with(density) { 12.dp.toPx() }
+
+                            LaunchedEffect(currentScreen) {
+                                if (previousScreen != currentScreen) {
+                                    tabAnimatable.snapTo(0f)
+                                    tabAnimatable.animateTo(
+                                        targetValue = 1f,
+                                        animationSpec = tween(durationMillis = TskRMotion.DURATION_STANDARD, easing = TskRMotion.EasingStandard)
+                                    )
+                                    previousScreen = currentScreen
+                                }
+                            }
+
                             navigationItems.forEach { (screen, icon, label) ->
                                 val selected = currentScreen == screen
                                 val animatedContainerColor by animateColorAsState(
@@ -1862,11 +2079,17 @@ fun ReminderScreen(
                                     label = "nav_icon"
                                 )
 
+                                val t = if (selected) tabAnimatable.value else 1f
+                                val arcY = -4f * arcHeightPx * t * (1f - t)
+
                                 Box(
                                     modifier = Modifier
                                         .size(48.dp)
                                         .clip(CircleShape)
                                         .background(animatedContainerColor)
+                                        .graphicsLayer {
+                                            translationY = if (selected) arcY else 0f
+                                        }
                                         .clickable {
                                             if (screen == Screen.Tasks) tasksInitialFilter = TaskFilter.ALL
                                             currentScreen = screen
@@ -1884,13 +2107,28 @@ fun ReminderScreen(
                         }
                     }
 
+                    val fabInteractionSource = remember { MutableInteractionSource() }
+                    val isFabPressed by fabInteractionSource.collectIsPressedAsState()
+                    val fabScale by animateFloatAsState(
+                        targetValue = if (isFabPressed) 0.97f else 1.0f,
+                        animationSpec = tween(durationMillis = TskRMotion.DURATION_MICRO, easing = TskRMotion.EasingStandard),
+                        label = "FabPressScaleAnimation"
+                    )
+
                     // Universal "+" Action Button
                     FloatingActionButton(
                         onClick = { showCreateMenu = true },
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        interactionSource = fabInteractionSource,
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp, pressedElevation = 8.dp),
                         shape = CircleShape,
-                        modifier = Modifier.size(64.dp)
+                        modifier = Modifier
+                            .size(64.dp)
+                            .graphicsLayer {
+                                scaleX = fabScale
+                                scaleY = fabScale
+                            }
                     ) {
                         Icon(Icons.Default.Add, contentDescription = "Create", modifier = Modifier.size(28.dp))
                     }
@@ -1899,6 +2137,19 @@ fun ReminderScreen(
 
             if (showCreateMenu) {
                 val createChooserSheetState = rememberModalBottomSheetState()
+                val menuAnimatable = remember { Animatable(0f) }
+                LaunchedEffect(Unit) {
+                    menuAnimatable.snapTo(0f)
+                    menuAnimatable.animateTo(
+                        targetValue = 1f,
+                        animationSpec = tween(durationMillis = TskRMotion.DURATION_STANDARD, easing = TskRMotion.EasingStandard)
+                    )
+                }
+                val t = menuAnimatable.value
+                val scale = 0.7f + 0.3f * t
+                val alpha = t
+                val (arcX, arcY) = TskRMotion.calculateParabolicOffset(t, startX = 24f * (1f - t), endX = 0f, startY = 24f * (1f - t), endY = 0f, arcHeightPx = 12f)
+
                 ModalBottomSheet(
                     onDismissRequest = { showCreateMenu = false },
                     sheetState = createChooserSheetState,
@@ -1909,6 +2160,13 @@ fun ReminderScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .navigationBarsPadding()
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                this.alpha = alpha
+                                translationX = arcX
+                                translationY = arcY
+                            }
                             .padding(horizontal = 24.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
@@ -2059,7 +2317,7 @@ fun ReminderScreen(
                         reminderPlanId = null
                         onSheetClosed()
                     },
-                    onSave = { title, date, time, priority, notes, subTasksRaw, motivation, recType, recInterval, planId, n7d, n24h, nNow ->
+                    onSave = { title, date, time, priority, notes, subTasksRaw, motivation, recType, recInterval, planId, n7d, n24h, nNow, recDays, recMonthlyMode, recYearlyMode, recOrdinal, recWeekday, recYearlyMonth ->
                         val editRem = editingReminder
                         if (editRem != null) {
                             onEvent(ReminderEvent.UpdateReminder(editRem.copy(
@@ -2075,7 +2333,13 @@ fun ReminderScreen(
                                 planId = planId,
                                 notify7Days = n7d,
                                 notify24Hours = n24h,
-                                notifyDueNow = nNow
+                                notifyDueNow = nNow,
+                                recurrenceDaysOfWeek = recDays,
+                                recurrenceMonthlyMode = recMonthlyMode,
+                                recurrenceYearlyMode = recYearlyMode,
+                                recurrenceOrdinal = recOrdinal,
+                                recurrenceWeekday = recWeekday,
+                                recurrenceYearlyMonth = recYearlyMonth
                             )))
                         } else {
                             onEvent(ReminderEvent.AddReminder(
@@ -2091,7 +2355,13 @@ fun ReminderScreen(
                                 planId = planId,
                                 notify7Days = n7d,
                                 notify24Hours = n24h,
-                                notifyDueNow = nNow
+                                notifyDueNow = nNow,
+                                recurrenceDaysOfWeek = recDays,
+                                recurrenceMonthlyMode = recMonthlyMode,
+                                recurrenceYearlyMode = recYearlyMode,
+                                recurrenceOrdinal = recOrdinal,
+                                recurrenceWeekday = recWeekday,
+                                recurrenceYearlyMonth = recYearlyMonth
                             ))
                         }
                         showBottomSheet = false
@@ -2110,26 +2380,84 @@ fun ReminderScreen(
                         showPlanSheet = false
                         editingPlan = null
                     },
-                    onSave = { name, description, icon, deadline ->
+                    onSave = { name, description, icon, deadline, category, categorySource, color, colorSource ->
                         val editPln = editingPlan
                         if (editPln != null) {
                             onEvent(ReminderEvent.UpdatePlan(editPln.copy(
                                 name = name,
                                 description = description,
                                 icon = icon,
-                                deadline = deadline
+                                deadline = deadline,
+                                category = category,
+                                categorySource = categorySource,
+                                color = color,
+                                colorSource = colorSource
                             )))
                         } else {
                             onEvent(ReminderEvent.AddPlan(
                                 name = name,
                                 description = description,
                                 icon = icon,
-                                deadline = deadline
+                                deadline = deadline,
+                                category = category,
+                                categorySource = categorySource,
+                                color = color,
+                                colorSource = colorSource
                             ))
                         }
                         showPlanSheet = false
                         editingPlan = null
                     }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DashboardEmptyStateCard(
+    title: String,
+    prompt: String,
+    buttonText: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = prompt,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            TextButton(onClick = onClick) {
+                Text(
+                    text = buttonText,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
@@ -2147,7 +2475,7 @@ fun ReminderCard(
     nowStr: String = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date()) },
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit = {}
 ) {
     val isCompleted = !reminder.isActive
     val isOverdue = reminder.isActive && "${reminder.date} ${reminder.time}" < nowStr
@@ -2156,11 +2484,11 @@ fun ReminderCard(
     val alpha = if (isCompleted) 0.6f else 1f
     val strikeThrough = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
 
+    val isDark = isSystemInDarkTheme()
     val statusColor = when {
-        isCompleted -> SuccessGreen
-        isOverdue -> MaterialTheme.colorScheme.error
-        isImportant -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.primary
+        isCompleted -> getStatusCompletedColor(isDark)
+        isOverdue || isImportant -> getStatusOverdueColor(isDark)
+        else -> getStatusUpcomingColor(isDark)
     }
 
     val plan = remember(reminder.planId, plans) {
@@ -2177,17 +2505,30 @@ fun ReminderCard(
         }
     }
 
+    val targetContainerColor = if (isCompleted) {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+    }
+    val animatedContainerColor by animateColorAsState(
+        targetValue = targetContainerColor,
+        animationSpec = tween(durationMillis = TskRMotion.DURATION_MICRO, easing = TskRMotion.EasingStandard),
+        label = "TaskCardBackgroundColorAnimation"
+    )
+
+    val iconScale by animateFloatAsState(
+        targetValue = if (isCompleted) 1.1f else 1.0f,
+        animationSpec = tween(durationMillis = TskRMotion.DURATION_MICRO, easing = TskRMotion.EasingStandard),
+        label = "TaskCompletionScaleAnimation"
+    )
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isCompleted) {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-            }
+            containerColor = animatedContainerColor
         ),
         border = if (reminder.isActive) {
             BorderStroke(1.dp, statusColor.copy(alpha = 0.25f))
@@ -2206,7 +2547,7 @@ fun ReminderCard(
                 modifier = Modifier
                     .fillMaxHeight()
                     .width(4.dp)
-                    .background(statusColor.copy(alpha = alpha))
+                    .background(statusColor)
             )
 
             Row(
@@ -2231,7 +2572,7 @@ fun ReminderCard(
                             Icon(
                                 imageVector = Icons.Default.NotificationsActive,
                                 contentDescription = "Important",
-                                tint = MaterialTheme.colorScheme.error,
+                                tint = statusColor,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -2240,7 +2581,7 @@ fun ReminderCard(
                             text = reminder.title,
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+                                color = if (isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface,
                                 textDecoration = strikeThrough
                             ),
                             maxLines = 1,
@@ -2263,7 +2604,7 @@ fun ReminderCard(
                             Icon(
                                 imageVector = if (isOverdue) Icons.Default.PriorityHigh else Icons.Default.CalendarToday,
                                 contentDescription = null,
-                                tint = if (isOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary.copy(alpha = alpha),
+                                tint = if (isOverdue) statusColor else statusColor.copy(alpha = alpha),
                                 modifier = Modifier.size(13.dp)
                             )
                             Text(
@@ -2271,7 +2612,7 @@ fun ReminderCard(
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontWeight = if (isOverdue) FontWeight.Bold else FontWeight.Medium
                                 ),
-                                color = if (isOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
+                                color = if (isOverdue) statusColor else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -2369,35 +2710,55 @@ fun ReminderCard(
                     }
                 }
 
-                // Action Controls Row
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                // Trailing Completion Action Control (Direct Trash Icon Removed for Safety)
+                IconButton(
+                    onClick = { onToggle(!reminder.isActive) },
+                    modifier = Modifier.size(36.dp)
                 ) {
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { onToggle(!reminder.isActive) },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                            contentDescription = "Toggle completion",
-                            tint = if (isCompleted) SuccessGreen else MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = if (isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        contentDescription = "Toggle completion",
+                        tint = if (isCompleted) statusColor else MaterialTheme.colorScheme.outline,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .graphicsLayer {
+                                scaleX = iconScale
+                                scaleY = iconScale
+                            }
+                    )
                 }
+            }
+        }
+    }
+}
+
+fun buildRecurrenceSummary(rule: RecurrenceRule): String {
+    if (!rule.isRecurring()) return "No repeat"
+
+    return when (rule.type) {
+        RecurrenceType.NONE -> "No repeat"
+        RecurrenceType.DAILY -> if (rule.interval == 1) "Repeats daily" else "Repeats every ${rule.interval} days"
+        RecurrenceType.WEEKLY -> {
+            val days = if (rule.daysOfWeek.isEmpty()) "selected days" else rule.getSerializedDaysOfWeek().replace("|", ", ")
+            if (rule.interval == 1) "Repeats weekly on $days" else "Repeats every ${rule.interval} weeks on $days"
+        }
+        RecurrenceType.MONTHLY -> {
+            if (rule.monthlyMode == MonthlyMode.ORDINAL_WEEKDAY) {
+                val ord = rule.ordinal?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "first"
+                val day = rule.weekday?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Monday"
+                if (rule.interval == 1) "Repeats monthly on the $ord $day" else "Repeats every ${rule.interval} months on the $ord $day"
+            } else {
+                if (rule.interval == 1) "Repeats monthly" else "Repeats every ${rule.interval} months"
+            }
+        }
+        RecurrenceType.YEARLY -> {
+            val monthName = try { Month.of(if (rule.yearlyMonth in 1..12) rule.yearlyMonth else 1).name.lowercase().replaceFirstChar { it.uppercase() } } catch (_: Exception) { "month" }
+            if (rule.yearlyMode == YearlyMode.ORDINAL_WEEKDAY) {
+                val ord = rule.ordinal?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "first"
+                val day = rule.weekday?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Monday"
+                if (rule.interval == 1) "Repeats yearly on the $ord $day of $monthName" else "Repeats every ${rule.interval} years on the $ord $day of $monthName"
+            } else {
+                if (rule.interval == 1) "Repeats yearly in $monthName" else "Repeats every ${rule.interval} years in $monthName"
             }
         }
     }
@@ -2427,7 +2788,13 @@ fun AddReminderBottomSheet(
         planId: String?,
         notify7Days: Boolean,
         notify24Hours: Boolean,
-        notifyDueNow: Boolean
+        notifyDueNow: Boolean,
+        recurrenceDaysOfWeek: String,
+        recurrenceMonthlyMode: String,
+        recurrenceYearlyMode: String,
+        recurrenceOrdinal: String,
+        recurrenceWeekday: String,
+        recurrenceYearlyMonth: Int
     ) -> Unit
 ) {
     val now = remember { Calendar.getInstance() }
@@ -2441,14 +2808,58 @@ fun AddReminderBottomSheet(
     var notes by remember { mutableStateOf(reminderToEdit?.notes ?: "") }
     var selectedPlanId by remember { mutableStateOf(reminderToEdit?.planId ?: preselectedPlanId) }
 
-    var recurrenceType by remember {
-        mutableStateOf(reminderToEdit?.recurrenceType ?: Reminder.RECURRENCE_NONE)
+    val initialRule = remember(reminderToEdit) {
+        reminderToEdit?.toRecurrenceRule() ?: RecurrenceRule()
     }
-    var recurrenceInterval by remember {
-        mutableStateOf(reminderToEdit?.recurrenceInterval ?: 1)
+
+    var recType by remember { mutableStateOf(initialRule.type) }
+    var recInterval by remember { mutableStateOf(initialRule.interval) }
+    var intervalInput by remember { mutableStateOf(recInterval.toString()) }
+    var recDaysOfWeek by remember {
+        mutableStateOf(
+            if (initialRule.type == RecurrenceType.WEEKLY && initialRule.daysOfWeek.isEmpty()) {
+                val inferredDay = try {
+                    LocalDate.parse(selectedDate).dayOfWeek
+                } catch (_: Exception) { null }
+                if (inferredDay != null) setOf(RecurrenceDayOfWeek.valueOf(inferredDay.name))
+                else setOf(RecurrenceDayOfWeek.MONDAY)
+            } else {
+                initialRule.daysOfWeek
+            }
+        )
     }
-    var intervalInput by remember {
-        mutableStateOf(recurrenceInterval.toString())
+    var recMonthlyMode by remember { mutableStateOf(initialRule.monthlyMode) }
+    var recYearlyMode by remember { mutableStateOf(initialRule.yearlyMode) }
+    var recOrdinal by remember { mutableStateOf(initialRule.ordinal ?: RecurrenceOrdinal.FIRST) }
+    var recWeekday by remember { mutableStateOf(initialRule.weekday ?: RecurrenceDayOfWeek.MONDAY) }
+    var recYearlyMonth by remember {
+        mutableStateOf(
+            if (initialRule.yearlyMonth in 1..12) initialRule.yearlyMonth
+            else (try { LocalDate.parse(selectedDate).monthValue } catch (_: Exception) { 1 })
+        )
+    }
+
+    var ordinalDropdownExpanded by remember { mutableStateOf(false) }
+    var weekdayDropdownExpanded by remember { mutableStateOf(false) }
+    var yearlyMonthDropdownExpanded by remember { mutableStateOf(false) }
+
+    val currentRecurrenceRule = remember(
+        recType, recInterval, recDaysOfWeek, recMonthlyMode, recYearlyMode, recOrdinal, recWeekday, recYearlyMonth
+    ) {
+        RecurrenceRule(
+            type = recType,
+            interval = recInterval,
+            daysOfWeek = recDaysOfWeek,
+            monthlyMode = recMonthlyMode,
+            yearlyMode = recYearlyMode,
+            ordinal = recOrdinal,
+            weekday = recWeekday,
+            yearlyMonth = recYearlyMonth
+        )
+    }
+
+    val isRecurrenceValid = remember(currentRecurrenceRule) {
+        currentRecurrenceRule.validate() is RecurrenceRule.Result.Success
     }
 
     var notify7Days by remember { mutableStateOf(reminderToEdit?.notify7Days ?: false) }
@@ -2514,16 +2925,19 @@ fun AddReminderBottomSheet(
                 ) {
 
                     // 1. Task Title Input
-                    OutlinedTextField(
+                    TextField(
                         value = taskName,
                         onValueChange = { taskName = it },
                         label = { Text("What needs to be done?") },
                         placeholder = { Text("Enter a task title...") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        shape = RoundedCornerShape(16.dp),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
                         )
                     )
 
@@ -2576,7 +2990,7 @@ fun AddReminderBottomSheet(
                         onExpandedChange = { planDropdownExpanded = !planDropdownExpanded },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        OutlinedTextField(
+                        TextField(
                             value = selectedPlan?.name ?: "No Plan",
                             onValueChange = {},
                             readOnly = true,
@@ -2593,11 +3007,13 @@ fun AddReminderBottomSheet(
                             trailingIcon = {
                                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = planDropdownExpanded)
                             },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                            ),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            )
                         )
 
                         ExposedDropdownMenu(
@@ -2678,45 +3094,57 @@ fun AddReminderBottomSheet(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        AssistChip(
+                        Surface(
                             onClick = { showDatePicker = true },
-                            label = { Text(text = formattedDateDisplay, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)) },
-                            leadingIcon = {
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(54.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
                                 Icon(
                                     imageVector = Icons.Default.CalendarToday,
                                     contentDescription = "Select Date",
-                                    modifier = Modifier.size(AssistChipDefaults.IconSize)
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
                                 )
-                            },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
-                                labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                            ),
-                            border = null,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        )
+                                Column {
+                                    Text("Date", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(formattedDateDisplay, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
 
-                        AssistChip(
+                        Surface(
                             onClick = { showTimePicker = true },
-                            label = { Text(text = formattedTimeDisplay, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)) },
-                            leadingIcon = {
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(54.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
                                 Icon(
                                     imageVector = Icons.Default.Schedule,
                                     contentDescription = "Select Time",
-                                    modifier = Modifier.size(AssistChipDefaults.IconSize)
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
                                 )
-                            },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
-                                labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                            ),
-                            border = null,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        )
+                                Column {
+                                    Text("Time", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(formattedTimeDisplay, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
                     }
 
                     // 4. Urgency Section
@@ -2766,37 +3194,50 @@ fun AddReminderBottomSheet(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        FilterChip(
-                            selected = priority == Reminder.PRIORITY_IMPORTANT,
+                        val isImportantSelected = priority == Reminder.PRIORITY_IMPORTANT
+                        Surface(
                             onClick = { priority = Reminder.PRIORITY_IMPORTANT },
-                            label = { Text("Important", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.PriorityHigh,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        FilterChip(
-                            selected = priority == Reminder.PRIORITY_NORMAL,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (isImportantSelected) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            contentColor = if (isImportantSelected) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.PriorityHigh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Important", fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        val isNormalSelected = priority == Reminder.PRIORITY_NORMAL
+                        Surface(
                             onClick = { priority = Reminder.PRIORITY_NORMAL },
-                            label = { Text("Normal", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (isNormalSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            contentColor = if (isNormalSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Normal", fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
 
-                    // 5. Repeat / Recurrence Section
+                    // 5. Repeat / Recurrence 2.0 Section (Outlook-Inspired Material 3 Layout)
                     Column {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -2841,24 +3282,33 @@ fun AddReminderBottomSheet(
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
+
+                        // Top-Level Options: None, Daily, Weekly, Monthly, Yearly
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             val options = listOf(
-                                Reminder.RECURRENCE_NONE to "None",
-                                Reminder.RECURRENCE_DAILY to "Daily",
-                                Reminder.RECURRENCE_WEEKLY to "Weekly",
-                                Reminder.RECURRENCE_MONTHLY to "Monthly",
-                                Reminder.RECURRENCE_CUSTOM_DAYS to "Custom"
+                                RecurrenceType.NONE to "None",
+                                RecurrenceType.DAILY to "Daily",
+                                RecurrenceType.WEEKLY to "Weekly",
+                                RecurrenceType.MONTHLY to "Monthly",
+                                RecurrenceType.YEARLY to "Yearly"
                             )
                             items(options) { (type, label) ->
                                 FilterChip(
-                                    selected = recurrenceType == type,
+                                    selected = recType == type,
                                     onClick = {
-                                        recurrenceType = type
-                                        if (type != Reminder.RECURRENCE_CUSTOM_DAYS && recurrenceInterval < 1) {
-                                            recurrenceInterval = 1
+                                        recType = type
+                                        if (type == RecurrenceType.WEEKLY && recDaysOfWeek.isEmpty()) {
+                                            val inferredDay = try {
+                                                LocalDate.parse(selectedDate).dayOfWeek
+                                            } catch (_: Exception) { null }
+                                            if (inferredDay != null) {
+                                                recDaysOfWeek = setOf(RecurrenceDayOfWeek.valueOf(inferredDay.name))
+                                            } else {
+                                                recDaysOfWeek = setOf(RecurrenceDayOfWeek.MONDAY)
+                                            }
                                         }
                                     },
                                     label = { Text(label) }
@@ -2866,29 +3316,284 @@ fun AddReminderBottomSheet(
                             }
                         }
 
-                        if (recurrenceType == Reminder.RECURRENCE_CUSTOM_DAYS) {
-                            Spacer(modifier = Modifier.height(8.dp))
+                        // Progressive Disclosure Panels
+                        if (recType != RecurrenceType.NONE) {
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Interval Controls
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text("Every", style = MaterialTheme.typography.bodyMedium)
-                                OutlinedTextField(
+                                Text("Every", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                IconButton(
+                                    onClick = {
+                                        if (recInterval > 1) {
+                                            recInterval--
+                                            intervalInput = recInterval.toString()
+                                        }
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.RemoveCircleOutline, contentDescription = "Decrease interval")
+                                }
+                                TextField(
                                     value = intervalInput,
                                     onValueChange = { input ->
                                         intervalInput = input
                                         val parsed = input.toIntOrNull()
                                         if (parsed != null && parsed > 0) {
-                                            recurrenceInterval = parsed
+                                            recInterval = parsed
                                         }
                                     },
-                                    modifier = Modifier.width(80.dp),
+                                    modifier = Modifier.width(64.dp),
                                     singleLine = true,
-                                    keyboardOptions = KeyboardOptions(
-                                        keyboardType = KeyboardType.Number
+                                    shape = RoundedCornerShape(12.dp),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        focusedIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent
                                     )
                                 )
-                                Text("days", style = MaterialTheme.typography.bodyMedium)
+                                IconButton(
+                                    onClick = {
+                                        recInterval++
+                                        intervalInput = recInterval.toString()
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.AddCircleOutline, contentDescription = "Increase interval")
+                                }
+
+                                val unitLabel = when (recType) {
+                                    RecurrenceType.DAILY -> if (recInterval == 1) "day" else "days"
+                                    RecurrenceType.WEEKLY -> if (recInterval == 1) "week" else "weeks"
+                                    RecurrenceType.MONTHLY -> if (recInterval == 1) "month" else "months"
+                                    RecurrenceType.YEARLY -> if (recInterval == 1) "year" else "years"
+                                    else -> ""
+                                }
+                                Text(unitLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            }
+
+                            // WEEKLY Panel
+                            if (recType == RecurrenceType.WEEKLY) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("On days:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    val days = listOf(
+                                        RecurrenceDayOfWeek.MONDAY to "M",
+                                        RecurrenceDayOfWeek.TUESDAY to "T",
+                                        RecurrenceDayOfWeek.WEDNESDAY to "W",
+                                        RecurrenceDayOfWeek.THURSDAY to "T",
+                                        RecurrenceDayOfWeek.FRIDAY to "F",
+                                        RecurrenceDayOfWeek.SATURDAY to "S",
+                                        RecurrenceDayOfWeek.SUNDAY to "S"
+                                    )
+                                    for ((dayEnum, label) in days) {
+                                        val isSelected = recDaysOfWeek.contains(dayEnum)
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                recDaysOfWeek = if (isSelected) {
+                                                    if (recDaysOfWeek.size > 1) recDaysOfWeek - dayEnum else recDaysOfWeek
+                                                } else {
+                                                    recDaysOfWeek + dayEnum
+                                                }
+                                            },
+                                            label = { Text(label, fontWeight = FontWeight.Bold) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // MONTHLY Panel
+                            if (recType == RecurrenceType.MONTHLY) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(
+                                        selected = recMonthlyMode == MonthlyMode.DAY_OF_MONTH,
+                                        onClick = { recMonthlyMode = MonthlyMode.DAY_OF_MONTH },
+                                        label = { Text("Day") }
+                                    )
+                                    FilterChip(
+                                        selected = recMonthlyMode == MonthlyMode.ORDINAL_WEEKDAY,
+                                        onClick = { recMonthlyMode = MonthlyMode.ORDINAL_WEEKDAY },
+                                        label = { Text("Weekday") }
+                                    )
+                                }
+
+                                if (recMonthlyMode == MonthlyMode.ORDINAL_WEEKDAY) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text("On the", style = MaterialTheme.typography.bodyMedium)
+
+                                        AssistChip(
+                                            onClick = { ordinalDropdownExpanded = true },
+                                            label = { Text(recOrdinal.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                                        )
+                                        DropdownMenu(
+                                            expanded = ordinalDropdownExpanded,
+                                            onDismissRequest = { ordinalDropdownExpanded = false }
+                                        ) {
+                                            for (ord in RecurrenceOrdinal.entries) {
+                                                DropdownMenuItem(
+                                                    text = { Text(ord.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                                                    onClick = {
+                                                        recOrdinal = ord
+                                                        ordinalDropdownExpanded = false
+                                                    }
+                                                )
+                                            }
+                                        }
+
+                                        AssistChip(
+                                            onClick = { weekdayDropdownExpanded = true },
+                                            label = { Text(recWeekday.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                                        )
+                                        DropdownMenu(
+                                            expanded = weekdayDropdownExpanded,
+                                            onDismissRequest = { weekdayDropdownExpanded = false }
+                                        ) {
+                                            for (day in RecurrenceDayOfWeek.entries) {
+                                                DropdownMenuItem(
+                                                    text = { Text(day.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                                                    onClick = {
+                                                        recWeekday = day
+                                                        weekdayDropdownExpanded = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // YEARLY Panel
+                            if (recType == RecurrenceType.YEARLY) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(
+                                        selected = recYearlyMode == YearlyMode.SPECIFIC_DATE,
+                                        onClick = { recYearlyMode = YearlyMode.SPECIFIC_DATE },
+                                        label = { Text("Date") }
+                                    )
+                                    FilterChip(
+                                        selected = recYearlyMode == YearlyMode.ORDINAL_WEEKDAY,
+                                        onClick = { recYearlyMode = YearlyMode.ORDINAL_WEEKDAY },
+                                        label = { Text("Weekday") }
+                                    )
+                                }
+
+                                if (recYearlyMode == YearlyMode.ORDINAL_WEEKDAY) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text("On the", style = MaterialTheme.typography.bodyMedium)
+
+                                        AssistChip(
+                                            onClick = { ordinalDropdownExpanded = true },
+                                            label = { Text(recOrdinal.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                                        )
+                                        DropdownMenu(
+                                            expanded = ordinalDropdownExpanded,
+                                            onDismissRequest = { ordinalDropdownExpanded = false }
+                                        ) {
+                                            for (ord in RecurrenceOrdinal.entries) {
+                                                DropdownMenuItem(
+                                                    text = { Text(ord.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                                                    onClick = {
+                                                        recOrdinal = ord
+                                                        ordinalDropdownExpanded = false
+                                                    }
+                                                )
+                                            }
+                                        }
+
+                                        AssistChip(
+                                            onClick = { weekdayDropdownExpanded = true },
+                                            label = { Text(recWeekday.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                                        )
+                                        DropdownMenu(
+                                            expanded = weekdayDropdownExpanded,
+                                            onDismissRequest = { weekdayDropdownExpanded = false }
+                                        ) {
+                                            for (day in RecurrenceDayOfWeek.entries) {
+                                                DropdownMenuItem(
+                                                    text = { Text(day.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                                                    onClick = {
+                                                        recWeekday = day
+                                                        weekdayDropdownExpanded = false
+                                                    }
+                                                )
+                                            }
+                                        }
+
+                                        Text("of", style = MaterialTheme.typography.bodyMedium)
+
+                                        val monthName = try {
+                                            Month.of(if (recYearlyMonth in 1..12) recYearlyMonth else 1).name.lowercase().replaceFirstChar { it.uppercase() }
+                                        } catch (_: Exception) { "January" }
+
+                                        AssistChip(
+                                            onClick = { yearlyMonthDropdownExpanded = true },
+                                            label = { Text(monthName) }
+                                        )
+                                        DropdownMenu(
+                                            expanded = yearlyMonthDropdownExpanded,
+                                            onDismissRequest = { yearlyMonthDropdownExpanded = false }
+                                        ) {
+                                            for (m in 1..12) {
+                                                val name = Month.of(m).name.lowercase().replaceFirstChar { it.uppercase() }
+                                                DropdownMenuItem(
+                                                    text = { Text(name) },
+                                                    onClick = {
+                                                        recYearlyMonth = m
+                                                        yearlyMonthDropdownExpanded = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Summary Banner
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Repeat,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = buildRecurrenceSummary(currentRecurrenceRule),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
@@ -2912,29 +3617,27 @@ fun AddReminderBottomSheet(
                                 modifier = Modifier.padding(top = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                // Reminder Alerts
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                // Early Warning Alerts
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(
-                                        text = "Reminder Alerts",
+                                        text = "Early Warning Alerts",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Tsk.R will always trigger Mission Mode at the scheduled time.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Medium
                                     )
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Text("At scheduled time", style = MaterialTheme.typography.bodyMedium)
-                                        Checkbox(checked = notifyDueNow, onCheckedChange = {}, enabled = false)
-                                    }
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
                                         Text("24 hours before", style = MaterialTheme.typography.bodyMedium)
-                                        Checkbox(checked = notify24Hours, onCheckedChange = { notify24Hours = it })
+                                        Switch(checked = notify24Hours, onCheckedChange = { notify24Hours = it })
                                     }
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -2942,21 +3645,24 @@ fun AddReminderBottomSheet(
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text("7 days before", style = MaterialTheme.typography.bodyMedium)
-                                        Checkbox(checked = notify7Days, onCheckedChange = { notify7Days = it })
+                                        Switch(checked = notify7Days, onCheckedChange = { notify7Days = it })
                                     }
                                 }
 
                                 // Notes
-                                OutlinedTextField(
+                                TextField(
                                     value = notes,
                                     onValueChange = { notes = it },
                                     label = { Text("Notes (Optional)") },
                                     placeholder = { Text("Add any strategic notes here...") },
                                     modifier = Modifier.fillMaxWidth(),
                                     maxLines = 4,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        focusedIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent
                                     )
                                 )
 
@@ -2993,7 +3699,7 @@ fun AddReminderBottomSheet(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        OutlinedTextField(
+                                        TextField(
                                             value = newSubTask,
                                             onValueChange = { input ->
                                                 if (input.contains("|")) {
@@ -3006,6 +3712,13 @@ fun AddReminderBottomSheet(
                                             placeholder = { Text("e.g. Buy ingredients") },
                                             modifier = Modifier.weight(1f),
                                             singleLine = true,
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = TextFieldDefaults.colors(
+                                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                                focusedIndicatorColor = Color.Transparent,
+                                                unfocusedIndicatorColor = Color.Transparent
+                                            ),
                                             keyboardActions = KeyboardActions(
                                                 onDone = {
                                                     if (newSubTask.isNotBlank() && !newSubTask.contains("|")) {
@@ -3029,13 +3742,20 @@ fun AddReminderBottomSheet(
                                 }
 
                                 // Custom Mission Quote
-                                OutlinedTextField(
+                                TextField(
                                     value = motivation,
                                     onValueChange = { motivation = it },
                                     label = { Text("Custom Mission Quote (Optional)") },
                                     placeholder = { Text("e.g. Future-you is watching!") },
                                     modifier = Modifier.fillMaxWidth(),
-                                    maxLines = 2
+                                    maxLines = 2,
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        focusedIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent
+                                    )
                                 )
                             }
                         }
@@ -3057,9 +3777,9 @@ fun AddReminderBottomSheet(
 
                     Button(
                         onClick = {
-                            if (taskName.isNotBlank()) {
+                            if (taskName.isNotBlank() && isRecurrenceValid) {
                                 val combinedSubTasks = subTasksList.joinToString("|")
-                                val validInterval = if (recurrenceInterval > 0) recurrenceInterval else 1
+                                val validInterval = if (recInterval > 0) recInterval else 1
                                 onSave(
                                     taskName,
                                     selectedDate,
@@ -3068,17 +3788,23 @@ fun AddReminderBottomSheet(
                                     notes,
                                     combinedSubTasks,
                                     motivation,
-                                    recurrenceType,
+                                    currentRecurrenceRule.type.name,
                                     validInterval,
                                     selectedPlanId,
                                     notify7Days,
                                     notify24Hours,
-                                    notifyDueNow
+                                    notifyDueNow,
+                                    currentRecurrenceRule.getSerializedDaysOfWeek(),
+                                    currentRecurrenceRule.monthlyMode.name,
+                                    currentRecurrenceRule.yearlyMode.name,
+                                    currentRecurrenceRule.ordinal?.name ?: "",
+                                    currentRecurrenceRule.weekday?.name ?: "",
+                                    currentRecurrenceRule.yearlyMonth
                                 )
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        enabled = taskName.isNotBlank(),
+                        enabled = taskName.isNotBlank() && isRecurrenceValid,
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(if (reminderToEdit != null) "Save Changes" else "Schedule", fontWeight = FontWeight.SemiBold)
@@ -3111,15 +3837,50 @@ fun AddPlanBottomSheet(
     planToEdit: Plan? = null,
     sheetState: SheetState,
     onDismiss: () -> Unit,
-    onSave: (name: String, description: String, icon: String, deadline: String?) -> Unit
+    onSave: (
+        name: String,
+        description: String,
+        icon: String,
+        deadline: String?,
+        category: String,
+        categorySource: String,
+        color: String,
+        colorSource: String
+    ) -> Unit
 ) {
     var name by remember { mutableStateOf(planToEdit?.name ?: "") }
     var description by remember { mutableStateOf(planToEdit?.description ?: "") }
     var deadline by remember { mutableStateOf(planToEdit?.deadline ?: "") }
 
-    val availableIcons = listOf("🎯", "🚀", "📚", "💼", "🏋️‍♂️", "⭐", "💡", "🎨")
-    var selectedIcon by remember { mutableStateOf(planToEdit?.icon ?: "") }
+    var category by remember { mutableStateOf(planToEdit?.getPlanCategory() ?: PlanCategory.PERSONAL) }
+    var categorySource by remember {
+        mutableStateOf(
+            if (planToEdit != null) planToEdit.getCategorySource() else CategorySource.AUTOMATIC
+        )
+    }
+    var color by remember { mutableStateOf(planToEdit?.getPlanColor() ?: PlanCategoryColorMapping.getDefaultColor(category)) }
+    var colorSource by remember {
+        mutableStateOf(
+            if (planToEdit != null) planToEdit.getColorSource() else ColorSource.CATEGORY
+        )
+    }
+
+    var showCategoryPicker by remember { mutableStateOf(false) }
+    var showColorPicker by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
+
+    val isDark = isSystemInDarkTheme()
+
+    // Automatic classification on name change if categorySource == AUTOMATIC
+    LaunchedEffect(name) {
+        if (categorySource == CategorySource.AUTOMATIC && name.isNotBlank()) {
+            val suggested = PlanCategoryClassifier.classify(name)
+            category = suggested
+            if (colorSource == ColorSource.CATEGORY) {
+                color = PlanCategoryColorMapping.getDefaultColor(suggested)
+            }
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -3160,17 +3921,45 @@ fun AddPlanBottomSheet(
                 maxLines = 3
             )
 
-            Text("Choose Icon (Optional)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            LazyRow(
+            // Category & Color Identity Summary Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(availableIcons) { emoji ->
-                    FilterChip(
-                        selected = selectedIcon == emoji,
-                        onClick = { selectedIcon = if (selectedIcon == emoji) "" else emoji },
-                        label = { Text(emoji, fontSize = 18.sp) }
+                // Category Chip
+                OutlinedButton(
+                    onClick = { showCategoryPicker = true },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    val iconVector = TskRPlanIcons.getIcon(category)
+                    Icon(imageVector = iconVector, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(category.displayName, style = MaterialTheme.typography.labelMedium)
+                }
+
+                // Color Chip
+                val effectiveColor = if (colorSource == ColorSource.CATEGORY) {
+                    PlanCategoryColorMapping.getDefaultColor(category)
+                } else {
+                    color
+                }
+                val resolvedColor = PlanColorResolver.resolve(effectiveColor, isDark)
+
+                OutlinedButton(
+                    onClick = { showColorPicker = true },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clip(CircleShape)
+                            .background(resolvedColor)
                     )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(effectiveColor.displayName, style = MaterialTheme.typography.labelMedium)
                 }
             }
 
@@ -3195,7 +3984,21 @@ fun AddPlanBottomSheet(
                 Button(
                     onClick = {
                         if (name.isNotBlank()) {
-                            onSave(name, description, selectedIcon, if (deadline.isBlank()) null else deadline)
+                            val finalColor = if (colorSource == ColorSource.CATEGORY) {
+                                PlanCategoryColorMapping.getDefaultColor(category)
+                            } else {
+                                color
+                            }
+                            onSave(
+                                name,
+                                description,
+                                category.name,
+                                if (deadline.isBlank()) null else deadline,
+                                category.name,
+                                categorySource.name,
+                                finalColor.name,
+                                colorSource.name
+                            )
                         }
                     },
                     modifier = Modifier.weight(1f),
@@ -3205,6 +4008,129 @@ fun AddPlanBottomSheet(
                     Text(if (planToEdit != null) "Save Changes" else "Create Plan", fontWeight = FontWeight.SemiBold)
                 }
             }
+        }
+
+        // Category Picker Dialog
+        if (showCategoryPicker) {
+            AlertDialog(
+                onDismissRequest = { showCategoryPicker = false },
+                title = { Text("Select Category") },
+                text = {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.heightIn(max = 300.dp)
+                    ) {
+                        items(PlanCategory.entries) { cat ->
+                            val isSelected = category == cat
+                            Surface(
+                                onClick = {
+                                    category = cat
+                                    categorySource = CategorySource.MANUAL
+                                    if (colorSource == ColorSource.CATEGORY) {
+                                        color = PlanCategoryColorMapping.getDefaultColor(cat)
+                                    }
+                                    showCategoryPicker = false
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = TskRPlanIcons.getIcon(cat),
+                                        contentDescription = null,
+                                        tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = cat.displayName,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showCategoryPicker = false }) {
+                        Text("Close")
+                    }
+                }
+            )
+        }
+
+        // Color Picker Dialog
+        if (showColorPicker) {
+            AlertDialog(
+                onDismissRequest = { showColorPicker = false },
+                title = { Text("Select Plan Color") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                colorSource = ColorSource.CATEGORY
+                                color = PlanCategoryColorMapping.getDefaultColor(category)
+                                showColorPicker = false
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Use Category Color (${PlanCategoryColorMapping.getDefaultColor(category).displayName})")
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.heightIn(max = 240.dp)
+                        ) {
+                            items(PlanColor.entries) { col ->
+                                val isSelected = colorSource == ColorSource.MANUAL && color == col
+                                val swatchColor = PlanColorResolver.resolve(col, isDark)
+                                Surface(
+                                    onClick = {
+                                        color = col
+                                        colorSource = ColorSource.MANUAL
+                                        showColorPicker = false
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .clip(CircleShape)
+                                                .background(swatchColor)
+                                        )
+                                        Text(
+                                            text = col.displayName,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showColorPicker = false }) {
+                        Text("Close")
+                    }
+                }
+            )
         }
 
         if (showDatePicker) {

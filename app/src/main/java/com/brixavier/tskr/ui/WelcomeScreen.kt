@@ -5,15 +5,19 @@ import android.app.AlarmManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.PowerManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -57,11 +61,17 @@ private fun checkNotificationPermission(context: Context): Boolean {
     return isPermissionGranted && NotificationManagerCompat.from(context).areNotificationsEnabled()
 }
 
+private fun checkBatteryOptimizationPermission(context: Context): Boolean {
+    val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+    return powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: true
+}
+
 @Composable
 fun WelcomeScreen(
     personalityEngine: PersonalityEngine,
     onAlarmPermissionRequest: () -> Unit,
     onNotificationPermissionRequest: () -> Unit,
+    onBatteryOptimizationRequest: () -> Unit = {},
     onProceed: () -> Unit
 ) {
     val context = LocalContext.current
@@ -73,12 +83,16 @@ fun WelcomeScreen(
     var isNotificationGranted by remember {
         mutableStateOf(checkNotificationPermission(context))
     }
+    var isBatteryGranted by remember {
+        mutableStateOf(checkBatteryOptimizationPermission(context))
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 isAlarmGranted = checkExactAlarmPermission(context)
                 isNotificationGranted = checkNotificationPermission(context)
+                isBatteryGranted = checkBatteryOptimizationPermission(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -97,6 +111,8 @@ fun WelcomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(24.dp)
     ) {
         AnimatedContent(
@@ -115,8 +131,10 @@ fun WelcomeScreen(
                 DemandsView(
                     isAlarmGranted = isAlarmGranted,
                     isNotificationGranted = isNotificationGranted,
+                    isBatteryGranted = isBatteryGranted,
                     onAlarmRequest = onAlarmPermissionRequest,
                     onNotificationRequest = onNotificationPermissionRequest,
+                    onBatteryRequest = onBatteryOptimizationRequest,
                     onProceed = onProceed
                 )
             }
@@ -197,16 +215,20 @@ fun WelcomeView(
 fun DemandsView(
     isAlarmGranted: Boolean,
     isNotificationGranted: Boolean,
+    isBatteryGranted: Boolean,
     onAlarmRequest: () -> Unit,
     onNotificationRequest: () -> Unit,
+    onBatteryRequest: () -> Unit,
     onProceed: () -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text(
             text = "The Mandatory Demands",
@@ -216,7 +238,7 @@ fun DemandsView(
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         PermissionCard(
             icon = Icons.Default.Alarm,
@@ -238,7 +260,17 @@ fun DemandsView(
             onGrant = onNotificationRequest
         )
 
-        Spacer(modifier = Modifier.weight(1f))
+        PermissionCard(
+            icon = Icons.Default.BatteryChargingFull,
+            title = "Background Activity (Recommended)",
+            description = "Android may put Tsk.R to sleep to save battery, which can delay your alarms and reminders.",
+            buttonText = "Allow Background Activity",
+            grantedStatusText = "✓ Background activity allowed",
+            isGranted = isBatteryGranted,
+            onGrant = onBatteryRequest
+        )
+
+        Spacer(modifier = Modifier.weight(1f, fill = false))
 
         Button(
             onClick = onProceed,

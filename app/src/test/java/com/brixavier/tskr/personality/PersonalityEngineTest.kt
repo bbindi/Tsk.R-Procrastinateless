@@ -1,5 +1,7 @@
 package com.brixavier.tskr.personality
 
+import com.brixavier.tskr.model.ReminderOccurrence
+import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -133,5 +135,148 @@ class PersonalityEngineTest {
         
         val msg = safeEngine.getMessage(PersonalityContext(actionType = ActionType.TASK_CREATED))
         assertEquals(MessagePools.FALLBACK_MESSAGE, msg.text)
+    }
+
+    @Test
+    fun allMessagePools_areNonEmptyAndContainValidText() {
+        val poolIds = listOf(
+            MessagePools.ONBOARDING, MessagePools.TASK_CREATED, MessagePools.TASK_UPDATED,
+            MessagePools.TASK_DELETED, MessagePools.TASK_RESTORED, MessagePools.TASK_APPROACHING,
+            MessagePools.TASK_DUE_NORMAL, MessagePools.TASK_DUE_IMPORTANT, MessagePools.TASK_OVERDUE_EARLY,
+            MessagePools.TASK_OVERDUE_LATE, MessagePools.TASK_SNOOZED, MessagePools.COMPLETION_NORMAL,
+            MessagePools.COMPLETION_RECURRING, MessagePools.COMPLETION_STREAK, MessagePools.EMPTY_STATE_NO_TASKS,
+            MessagePools.EMPTY_STATE_ALL_CAUGHT_UP, MessagePools.MISSION_MODE_WARNING, MessagePools.MISSION_MODE_WARNING_PLAN,
+            MessagePools.MISSION_MODE_DUE, MessagePools.MISSION_MODE_DUE_OVERDUE, MessagePools.MISSION_MODE_DUE_SNOOZED,
+            MessagePools.MISSION_MODE_DUE_RECURRING, MessagePools.MISSION_MODE_DUE_PLAN, MessagePools.MISSION_MODE_COMPLETION,
+            MessagePools.MISSION_MODE_COMPLETION_STREAK, MessagePools.MISSION_MODE_COMPLETION_RECURRING, MessagePools.WIDGET,
+            MessagePools.PLAN_CREATED, MessagePools.PLAN_NO_TASKS, MessagePools.PLAN_PROGRESS_START,
+            MessagePools.PLAN_PROGRESS_MID, MessagePools.PLAN_PROGRESS_COMPLETE, MessagePools.PLAN_DEADLINE_APPROACHING,
+            MessagePools.PLAN_DEADLINE_TODAY, MessagePools.PLAN_DEADLINE_PASSED, MessagePools.PLAN_COMPLETED,
+            MessagePools.PLAN_ARCHIVED, MessagePools.PLAN_REOPENED
+        )
+
+        assertEquals(38, poolIds.size)
+
+        for (poolId in poolIds) {
+            val pool = MessagePools.getPool(poolId)
+            assertTrue("Pool '$poolId' must contain at least 3 messages", pool.size >= 3)
+            for (msg in pool) {
+                assertTrue("Message in '$poolId' must not be blank", msg.isNotBlank())
+            }
+        }
+    }
+
+    @Test
+    fun behavioralContextResolver_derivesEarlyCompletionCorrectly() {
+        val futureDate = "2026-10-15"
+        val futureTime = "14:00"
+
+        val earlyOcc = ReminderOccurrence(
+            id = "occ-early",
+            title = "Submit Paper",
+            date = futureDate,
+            time = futureTime,
+            status = ReminderOccurrence.STATUS_COMPLETED,
+            completedAtMs = System.currentTimeMillis() // Completed now, long before 2026-10-15!
+        )
+
+        assertTrue(BehavioralContextResolver.isEarlyCompletion(earlyOcc))
+
+        // Snoozed occurrence suppresses early completion
+        val snoozedOcc = earlyOcc.copy(snoozedUntilMs = System.currentTimeMillis() + 300000)
+        Assert.assertFalse(BehavioralContextResolver.isEarlyCompletion(snoozedOcc))
+    }
+
+    @Test
+    fun behavioralContextResolver_calculatesOverdueMinutesCorrectly() {
+        val overdueMinutes = BehavioralContextResolver.calculateOverdueMinutes(
+            dateStr = "2026-09-25",
+            timeStr = "10:00",
+            nowStr = "2026-09-25 11:30"
+        )
+        assertEquals(90, overdueMinutes)
+    }
+
+    @Test
+    fun behavioralContextResolver_resolvesContextCorrectly() {
+        val occ = ReminderOccurrence(
+            id = "occ-1",
+            title = "Test Task",
+            date = "2026-09-25",
+            time = "10:00",
+            snoozeCount = 2
+        )
+
+        val ctx = BehavioralContextResolver.resolveContext(
+            actionType = ActionType.TASK_DUE,
+            occurrence = occ,
+            reminder = null,
+            streak = 4
+        )
+
+        assertEquals(2, ctx.snoozeCount)
+        assertEquals(4, ctx.streak)
+        assertEquals(ActionType.TASK_DUE, ctx.actionType)
+    }
+
+    @Test
+    fun taskCreated_lateNightHour_routesToLateNightPool() {
+        val lateNightCtx = PersonalityContext(
+            actionType = ActionType.TASK_CREATED,
+            timeOfDayHour = 2 // 2 AM
+        )
+        val lateNightMsg = engine.getMessage(lateNightCtx)
+        assertTrue(MessagePools.getPool(MessagePools.TASK_CREATED_LATE_NIGHT).contains(lateNightMsg.text))
+
+        val daytimeCtx = PersonalityContext(
+            actionType = ActionType.TASK_CREATED,
+            timeOfDayHour = 14 // 2 PM
+        )
+        val daytimeMsg = engine.getMessage(daytimeCtx)
+        assertTrue(MessagePools.getPool(MessagePools.TASK_CREATED).contains(daytimeMsg.text))
+    }
+
+    @Test
+    fun completion_earlyCompletion_takesPrecedenceAndRoutesToEarlyPool() {
+        val earlyCtx = PersonalityContext(
+            actionType = ActionType.COMPLETION,
+            isEarlyCompletion = true,
+            streak = 5,
+            isRecurring = true
+        )
+        val earlyMsg = engine.getMessage(earlyCtx)
+        assertTrue(MessagePools.getPool(MessagePools.COMPLETION_EARLY).contains(earlyMsg.text))
+
+        val missionEarlyCtx = PersonalityContext(
+            actionType = ActionType.MISSION_MODE_COMPLETION,
+            isEarlyCompletion = true,
+            streak = 5
+        )
+        val missionEarlyMsg = engine.getMessage(missionEarlyCtx)
+        assertTrue(MessagePools.getPool(MessagePools.MISSION_MODE_COMPLETION_EARLY).contains(missionEarlyMsg.text))
+    }
+
+    @Test
+    fun taskSnoozed_repeatedSnoozeCount_routesToRepeatedSnoozePools() {
+        val normalSnoozeCtx = PersonalityContext(
+            actionType = ActionType.TASK_SNOOZED,
+            snoozeCount = 1
+        )
+        val normalMsg = engine.getMessage(normalSnoozeCtx)
+        assertTrue(MessagePools.getPool(MessagePools.TASK_SNOOZED).contains(normalMsg.text))
+
+        val repeatedSnoozeCtx = PersonalityContext(
+            actionType = ActionType.TASK_SNOOZED,
+            snoozeCount = 2
+        )
+        val repeatedMsg = engine.getMessage(repeatedSnoozeCtx)
+        assertTrue(MessagePools.getPool(MessagePools.TASK_SNOOZED_REPEATED).contains(repeatedMsg.text))
+
+        val highSnoozeCtx = PersonalityContext(
+            actionType = ActionType.TASK_SNOOZED,
+            snoozeCount = 3
+        )
+        val highMsg = engine.getMessage(highSnoozeCtx)
+        assertTrue(MessagePools.getPool(MessagePools.TASK_SNOOZED_REPEATED_HIGH).contains(highMsg.text))
     }
 }

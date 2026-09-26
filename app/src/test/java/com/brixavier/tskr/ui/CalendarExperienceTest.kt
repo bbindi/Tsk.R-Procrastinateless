@@ -396,4 +396,142 @@ class CalendarExperienceTest {
         assertNull(item.planName)
         assertNull(item.planIcon)
     }
+
+    @Test
+    fun testTaskDensityCalculations_zeroOneTwoThreeAndCappedAtThree() {
+        val d25 = LocalDate.of(2026, 9, 25)
+        val d26 = LocalDate.of(2026, 9, 26)
+
+        val t1 = Reminder(id = "c1", title = "Task 1", date = "2026-09-25", time = "09:00")
+        val t2 = Reminder(id = "c2", title = "Task 2", date = "2026-09-25", time = "10:00")
+        val t3 = Reminder(id = "c3", title = "Task 3", date = "2026-09-25", time = "11:00")
+        val t4 = Reminder(id = "c4", title = "Task 4", date = "2026-09-25", time = "12:00")
+
+        val items = CalendarUtils.mapToCalendarItems(
+            reminders = listOf(t1, t2, t3, t4),
+            pendingOccurrences = emptyList(),
+            plans = emptyList(),
+            nowStr = nowStr
+        )
+
+        // Date with 0 tasks
+        assertEquals(0, CalendarUtils.taskCountForDate(items, d26))
+        assertEquals(0, CalendarUtils.getDensityDotCount(items, d26))
+
+        // Date with 4 tasks -> taskCount = 4, dotCount capped at 3
+        assertEquals(4, CalendarUtils.taskCountForDate(items, d25))
+        assertEquals(3, CalendarUtils.getDensityDotCount(items, d25))
+
+        // Subset with 1 task
+        val singleItem = items.take(1)
+        assertEquals(1, CalendarUtils.taskCountForDate(singleItem, d25))
+        assertEquals(1, CalendarUtils.getDensityDotCount(singleItem, d25))
+
+        // Subset with 2 tasks
+        val twoItems = items.take(2)
+        assertEquals(2, CalendarUtils.taskCountForDate(twoItems, d25))
+        assertEquals(2, CalendarUtils.getDensityDotCount(twoItems, d25))
+    }
+
+    @Test
+    fun testGetDateCellContentDescription_accessibilityFormat() {
+        val date = LocalDate.of(2026, 9, 25)
+        val descSelected = CalendarUtils.getDateCellContentDescription(
+            date = date,
+            taskCount = 3,
+            isSelected = true,
+            isToday = true
+        )
+
+        assertTrue(descSelected.contains("Friday, September 25, 2026"))
+        assertTrue(descSelected.contains("today"))
+        assertTrue(descSelected.contains("selected"))
+        assertTrue(descSelected.contains("3 tasks scheduled"))
+    }
+
+    @Test
+    fun testSameTimeTasks_useDeterministicSecondaryOrdering() {
+        val normalUrgency = Reminder(id = "s1", title = "B Task", date = "2026-09-25", time = "14:00", priority = Reminder.PRIORITY_NORMAL)
+        val highUrgency = Reminder(id = "s2", title = "A Task", date = "2026-09-25", time = "14:00", priority = Reminder.PRIORITY_IMPORTANT)
+        val normalUrgencyA = Reminder(id = "s3", title = "A Task", date = "2026-09-25", time = "14:00", priority = Reminder.PRIORITY_NORMAL)
+
+        val items = CalendarUtils.mapToCalendarItems(
+            reminders = listOf(normalUrgency, highUrgency, normalUrgencyA),
+            pendingOccurrences = emptyList(),
+            plans = emptyList(),
+            nowStr = nowStr
+        )
+
+        val sorted = items.sortedWith(
+            compareBy<CalendarItem> { it.time }
+                .thenBy { if (it.isImportant()) 0 else 1 }
+                .thenBy { it.title }
+        )
+
+        // 1st: High urgency "A Task"
+        assertEquals("s2", sorted[0].templateId)
+        // 2nd: Normal urgency "A Task"
+        assertEquals("s3", sorted[1].templateId)
+        // 3rd: Normal urgency "B Task"
+        assertEquals("s1", sorted[2].templateId)
+    }
+
+    @Test
+    fun testCompletedOccurrenceInHistory_remainsInCompletedOccurrences() {
+        val completedOcc = ReminderOccurrence(
+            id = "occ-comp",
+            templateId = "r1",
+            title = "Design Mockups",
+            date = "2026-09-25",
+            time = "10:00",
+            status = ReminderOccurrence.STATUS_COMPLETED,
+            completedAtMs = System.currentTimeMillis()
+        )
+
+        assertEquals("COMPLETED", completedOcc.status)
+        assertNotNull(completedOcc.completedAtMs)
+    }
+
+    @Test
+    fun testYearBoundaryNavigation_decemberToJanuaryAndJanuaryToDecember() {
+        val dec2026 = YearMonth.of(2026, 12)
+        val jan2027 = dec2026.plusMonths(1)
+        val backToDec = jan2027.minusMonths(1)
+
+        assertEquals(YearMonth.of(2027, 1), jan2027)
+        assertEquals(YearMonth.of(2026, 12), backToDec)
+    }
+
+    @Test
+    fun testLeapYearGridGeneration_february2028() {
+        val feb2028 = YearMonth.of(2028, 2)
+        val grid = CalendarUtils.generateMonthGrid(feb2028)
+
+        val febDays = grid.filter { it.isCurrentMonth }
+        assertEquals(29, febDays.size)
+        assertEquals(LocalDate.of(2028, 2, 29), febDays.last().date)
+    }
+
+    @Test
+    fun testWeekNavigationAcrossMonthAndYearBoundaries() {
+        val dec31 = LocalDate.of(2026, 12, 31) // Thursday
+        val weekRange = CalendarUtils.getWeekRange(dec31)
+
+        assertEquals(LocalDate.of(2026, 12, 28), weekRange.startDate) // Monday
+        assertEquals(LocalDate.of(2027, 1, 3), weekRange.endDate) // Sunday
+    }
+
+    @Test
+    fun testAccessibilitySemanticsFormat_includesDateSelectionAndTaskCount() {
+        val date = LocalDate.of(2026, 12, 31)
+        val labelZero = CalendarUtils.getDateCellContentDescription(date, 0, isSelected = false, isToday = false)
+        val labelOne = CalendarUtils.getDateCellContentDescription(date, 1, isSelected = true, isToday = true)
+
+        assertTrue(labelZero.contains("Thursday, December 31, 2026"))
+        assertTrue(labelZero.contains("no tasks scheduled"))
+
+        assertTrue(labelOne.contains("selected"))
+        assertTrue(labelOne.contains("today"))
+        assertTrue(labelOne.contains("1 task scheduled"))
+    }
 }

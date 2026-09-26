@@ -167,21 +167,9 @@ class TskRWidget : GlanceAppWidget() {
                             modifier = GlanceModifier
                                 .background(GlanceTheme.colors.primary)
                                 .cornerRadius(8.dp)
-                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                                 .clickable(actionRunCallback<CompleteTaskActionCallback>(
                                     actionParametersOf(CompleteTaskActionCallback.TargetOccurrenceIdKey to primaryTask.occurrenceId)
-                                ))
-                        )
-                        Spacer(modifier = GlanceModifier.defaultWeight())
-                        Text(
-                            text = "⏰ 5m",
-                            style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Bold),
-                            modifier = GlanceModifier
-                                .background(GlanceTheme.colors.surface)
-                                .cornerRadius(8.dp)
-                                .padding(horizontal = 6.dp, vertical = 3.dp)
-                                .clickable(actionRunCallback<SnoozeTaskActionCallback>(
-                                    actionParametersOf(SnoozeTaskActionCallback.TargetOccurrenceIdKey to primaryTask.occurrenceId)
                                 ))
                         )
                     }
@@ -315,18 +303,6 @@ class TskRWidget : GlanceAppWidget() {
                                     .padding(horizontal = 8.dp, vertical = 4.dp)
                                     .clickable(actionRunCallback<CompleteTaskActionCallback>(
                                         actionParametersOf(CompleteTaskActionCallback.TargetOccurrenceIdKey to primaryTask.occurrenceId)
-                                    ))
-                            )
-                            Spacer(modifier = GlanceModifier.width(6.dp))
-                            Text(
-                                text = "⏰ 5m",
-                                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                                modifier = GlanceModifier
-                                    .background(GlanceTheme.colors.surface)
-                                    .cornerRadius(10.dp)
-                                    .padding(horizontal = 6.dp, vertical = 4.dp)
-                                    .clickable(actionRunCallback<SnoozeTaskActionCallback>(
-                                        actionParametersOf(SnoozeTaskActionCallback.TargetOccurrenceIdKey to primaryTask.occurrenceId)
                                     ))
                             )
                         }
@@ -616,18 +592,6 @@ class TskRWidget : GlanceAppWidget() {
                                     .padding(horizontal = 8.dp, vertical = 4.dp)
                                     .clickable(actionRunCallback<CompleteTaskActionCallback>(
                                         actionParametersOf(CompleteTaskActionCallback.TargetOccurrenceIdKey to primaryTask.occurrenceId)
-                                    ))
-                            )
-                            Spacer(modifier = GlanceModifier.width(6.dp))
-                            Text(
-                                text = "⏰ 5m",
-                                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                                modifier = GlanceModifier
-                                    .background(GlanceTheme.colors.surface)
-                                    .cornerRadius(10.dp)
-                                    .padding(horizontal = 6.dp, vertical = 4.dp)
-                                    .clickable(actionRunCallback<SnoozeTaskActionCallback>(
-                                        actionParametersOf(SnoozeTaskActionCallback.TargetOccurrenceIdKey to primaryTask.occurrenceId)
                                     ))
                             )
                         }

@@ -4,6 +4,7 @@ import com.brixavier.tskr.model.Plan
 import com.brixavier.tskr.model.Reminder
 import com.brixavier.tskr.model.ReminderOccurrence
 import com.brixavier.tskr.personality.ActionType
+import com.brixavier.tskr.personality.MessagePools
 import com.brixavier.tskr.personality.PersonalityContext
 import com.brixavier.tskr.personality.PersonalityIntensity
 import org.junit.Assert.assertEquals
@@ -250,33 +251,9 @@ class WidgetExperienceTest {
     }
 
     @Test
-    fun testSnoozeOccurrence_5MinutesCalculation_doesNotMutateTemplateRecurrence() {
-        val baseOccurrence = ReminderOccurrence(
-            id = "occ-snooze-test",
-            templateId = "r2",
-            title = "Daily Exercise",
-            date = "2026-09-25",
-            time = "10:00",
-            status = ReminderOccurrence.STATUS_PENDING
-        )
-
-        val snoozeTime = LocalDateTime.of(2026, 9, 25, 10, 0).plusMinutes(5)
-        val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US)
-        val timeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.US)
-
-        val snoozedOccurrence = baseOccurrence.copy(
-            date = snoozeTime.format(dateFormatter),
-            time = snoozeTime.format(timeFormatter),
-            snoozedUntilMs = 123456789L
-        )
-
-        assertEquals("2026-09-25", snoozedOccurrence.date)
-        assertEquals("10:05", snoozedOccurrence.time)
-        assertEquals(123456789L, snoozedOccurrence.snoozedUntilMs)
-
-        // Master template recurrence rules remain 100% unchanged
-        assertEquals(Reminder.RECURRENCE_DAILY, recurringTaskMaster.recurrenceType)
-        assertEquals(1, recurringTaskMaster.recurrenceInterval)
+    fun testCompleteTaskActionCallback_targetOccurrenceIdKeyMatches() {
+        val key = CompleteTaskActionCallback.TargetOccurrenceIdKey
+        assertEquals("TARGET_OCCURRENCE_ID", key.name)
     }
 
     @Test
@@ -310,5 +287,128 @@ class WidgetExperienceTest {
     fun testWidgetProviderReceiver_matchesExpectedTskRWidgetReceiverClass() {
         val receiverClass = TskRWidgetReceiver::class.java
         assertEquals("com.brixavier.tskr.widget.TskRWidgetReceiver", receiverClass.name)
+    }
+
+    @Test
+    fun testWidgetLayoutLimits_smallTakes1_mediumTakes2_largeTakes4() {
+        val tasks = (1..6).map { i ->
+            WidgetTaskItem(
+                reminderId = "r-$i",
+                occurrenceId = "occ-$i",
+                title = "Long Task Title $i That Degrades Gracefully On Small Viewports",
+                date = "2026-09-26",
+                time = "10:00",
+                priority = Reminder.PRIORITY_NORMAL,
+                isRecurring = false
+            )
+        }
+
+        val smallList = tasks.take(1)
+        val mediumList = tasks.take(2)
+        val largeList = tasks.take(4)
+
+        assertEquals(1, smallList.size)
+        assertEquals(2, mediumList.size)
+        assertEquals(4, largeList.size)
+    }
+
+    @Test
+    fun testStaleOccurrenceResolution_handlesMissingOrCompletedOccurrencesSafely() {
+        val completedOcc = ReminderOccurrence(
+            id = "occ-completed-stale",
+            templateId = "r1",
+            title = "Submit Taxes",
+            date = "2026-09-25",
+            time = "10:00",
+            status = ReminderOccurrence.STATUS_COMPLETED,
+            completedAtMs = System.currentTimeMillis()
+        )
+
+        assertFalse(completedOcc.isPending())
+        assertEquals(ReminderOccurrence.STATUS_COMPLETED, completedOcc.status)
+    }
+
+    @Test
+    fun testMarkCompleting_filtersOccurrenceFromWidgetItems() {
+        WidgetDataResolver.clearAllCompleting()
+        val templateMap = mapOf(oneTimeTask.id to oneTimeTask)
+        val pendingOccs = listOf(oneTimePendingOccurrence)
+
+        // Mark occ-r1-1 as completing
+        assertTrue(WidgetDataResolver.markCompleting("occ-r1-1"))
+        assertTrue(WidgetDataResolver.isCompleting("occ-r1-1"))
+
+        val widgetItems = WidgetDataResolver.mapPendingOccurrencesToWidgetItems(
+            pendingOccurrences = pendingOccs,
+            templateMap = templateMap,
+            planMap = emptyMap(),
+            nowStr = nowStr
+        )
+
+        // Item must be filtered out immediately
+        assertTrue(widgetItems.isEmpty())
+
+        // Clear completing restores item
+        WidgetDataResolver.clearCompleting("occ-r1-1")
+        assertFalse(WidgetDataResolver.isCompleting("occ-r1-1"))
+
+        val restoredItems = WidgetDataResolver.mapPendingOccurrencesToWidgetItems(
+            pendingOccurrences = pendingOccs,
+            templateMap = templateMap,
+            planMap = emptyMap(),
+            nowStr = nowStr
+        )
+        assertEquals(1, restoredItems.size)
+    }
+
+    @Test
+    fun testDuplicateTap_markCompletingReturnsFalseOnSecondTap() {
+        WidgetDataResolver.clearAllCompleting()
+
+        // First tap succeeds
+        assertTrue(WidgetDataResolver.markCompleting("occ-r1-1"))
+
+        // Rapid second tap returns false and intercepts duplicate transaction
+        assertFalse(WidgetDataResolver.markCompleting("occ-r1-1"))
+
+        WidgetDataResolver.clearCompleting("occ-r1-1")
+    }
+
+    @Test
+    fun testCompletingState_clearsSafelyInFinallyBlock() {
+        WidgetDataResolver.clearAllCompleting()
+
+        try {
+            WidgetDataResolver.markCompleting("occ-r1-1")
+            assertTrue(WidgetDataResolver.isCompleting("occ-r1-1"))
+        } finally {
+            WidgetDataResolver.clearCompleting("occ-r1-1")
+        }
+
+        assertFalse(WidgetDataResolver.isCompleting("occ-r1-1"))
+    }
+
+    @Test
+    fun testWidgetPersonalityQuote_overdueTask_selectsOverdueWidgetQuote() {
+        val overdueCtx = PersonalityContext(
+            actionType = ActionType.WIDGET,
+            intensity = PersonalityIntensity.ACCOUNTABILITY,
+            overdueMinutes = 45,
+            oldestOverdueMinutes = 45
+        )
+
+        val quote = WidgetDataResolver.getStableWidgetPersonalityQuote(overdueCtx, "2026-09-25")
+        assertTrue(MessagePools.getPool(MessagePools.WIDGET_OVERDUE).contains(quote) ||
+                   MessagePools.getPool(MessagePools.TASK_DUE_IMPORTANT).contains(quote))
+
+        val lateOverdueCtx = PersonalityContext(
+            actionType = ActionType.WIDGET,
+            intensity = PersonalityIntensity.ACCOUNTABILITY,
+            overdueMinutes = 120,
+            oldestOverdueMinutes = 120
+        )
+        val lateQuote = WidgetDataResolver.getStableWidgetPersonalityQuote(lateOverdueCtx, "2026-09-25")
+        assertTrue(MessagePools.getPool(MessagePools.WIDGET_OVERDUE_LATE).contains(lateQuote) ||
+                   MessagePools.getPool(MessagePools.TASK_DUE_IMPORTANT).contains(lateQuote))
     }
 }

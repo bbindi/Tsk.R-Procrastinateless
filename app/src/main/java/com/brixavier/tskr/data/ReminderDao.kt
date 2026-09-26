@@ -15,6 +15,7 @@ import com.brixavier.tskr.model.PlanStep
 import com.brixavier.tskr.model.Reminder
 import com.brixavier.tskr.model.ReminderOccurrence
 import kotlinx.coroutines.flow.Flow
+import java.time.LocalDate
 import java.util.UUID
 
 /**
@@ -102,20 +103,30 @@ interface ReminderDao {
         SELECT
             :planId AS planId,
             COUNT(*) AS totalTasks,
-            COALESCE(SUM(CASE WHEN isActive = 0 THEN 1 ELSE 0 END), 0) AS completedTasks
-        FROM reminders
+            COALESCE(SUM(CASE WHEN isCompleted = 1 THEN 1 ELSE 0 END), 0) AS completedTasks
+        FROM plan_steps
         WHERE planId = :planId
     """)
     suspend fun getPlanProgress(planId: String): PlanProgress
 
     @Query("""
         SELECT
-            planId,
+            :planId AS planId,
             COUNT(*) AS totalTasks,
             COALESCE(SUM(CASE WHEN isActive = 0 THEN 1 ELSE 0 END), 0) AS completedTasks
         FROM reminders
-        WHERE planId IS NOT NULL
-        GROUP BY planId
+        WHERE planId = :planId
+    """)
+    suspend fun getConnectedTaskProgress(planId: String): PlanProgress
+
+    @Query("""
+        SELECT
+            p.id AS planId,
+            COUNT(s.id) AS totalTasks,
+            COALESCE(SUM(CASE WHEN s.isCompleted = 1 THEN 1 ELSE 0 END), 0) AS completedTasks
+        FROM plans p
+        LEFT JOIN plan_steps s ON p.id = s.planId
+        GROUP BY p.id
     """)
     fun getAllPlanProgressFlow(): Flow<List<PlanProgress>>
 
@@ -132,6 +143,9 @@ interface ReminderDao {
 
     @Delete
     suspend fun deleteNoteSection(section: PlanNoteSection)
+
+    @Query("SELECT * FROM plan_note_sections ORDER BY sortOrder ASC, createdAtMs ASC")
+    fun getAllNoteSectionsFlow(): Flow<List<PlanNoteSection>>
 
     @Query("SELECT * FROM plan_note_sections WHERE planId = :planId ORDER BY sortOrder ASC, createdAtMs ASC")
     fun getNoteSectionsForPlanFlow(planId: String): Flow<List<PlanNoteSection>>
@@ -155,6 +169,9 @@ interface ReminderDao {
 
     @Delete
     suspend fun deleteStep(step: PlanStep)
+
+    @Query("SELECT * FROM plan_steps ORDER BY sortOrder ASC, createdAtMs ASC")
+    fun getAllPlanStepsFlow(): Flow<List<PlanStep>>
 
     @Query("SELECT * FROM plan_steps WHERE planId = :planId ORDER BY sortOrder ASC, createdAtMs ASC")
     fun getStepsForPlanFlow(planId: String): Flow<List<PlanStep>>
@@ -216,11 +233,10 @@ interface ReminderDao {
             return existingPending.first()
         }
 
-        // 6. Calculate single next future occurrence date using RecurrenceEngine
+        // 6. Calculate single next future occurrence date using RecurrenceEngine 2.0
         val nextDueDateStr = RecurrenceEngine.calculateNextDueDate(
             baseDateStr = template.date,
-            recurrenceType = template.recurrenceType,
-            recurrenceInterval = template.recurrenceInterval,
+            rule = template.toRecurrenceRule(),
             afterDateStr = occurrence.date
         ) ?: return null
 
@@ -342,6 +358,69 @@ interface ReminderDao {
     suspend fun deletePlanTransaction(planId: String) {
         val plan = getPlanById(planId) ?: return
         deletePlanEntity(plan)
+    }
+
+    /**
+     * Atomically updates a Reminder template and reconciles its active PENDING occurrence in-place.
+     * Guarantees atomic database mutation without orphaned occurrences or stale schedules.
+     */
+    @Transaction
+    suspend fun updateReminderTransaction(reminder: Reminder): ReminderOccurrence? {
+        // 1. Assign task to plan and update master template in Room
+        assignTaskToPlanTransaction(reminder.id, reminder.planId)
+        update(reminder)
+
+        // 2. Query active pending occurrences for template
+        val pendingList = getOccurrencesForTemplate(reminder.id).filter { it.isPending() }
+        if (pendingList.isEmpty()) {
+            if (!reminder.isActive) return null
+
+            // If no pending occurrence exists and task is active, create initial
+            val newOcc = ReminderOccurrence(
+                id = UUID.randomUUID().toString(),
+                templateId = reminder.id,
+                title = reminder.title,
+                priority = reminder.priority,
+                date = reminder.date,
+                time = reminder.time,
+                status = ReminderOccurrence.STATUS_PENDING,
+                subTasksRaw = resetChecklistFromTemplate(reminder.subTasksRaw),
+                notify7Days = reminder.notify7Days,
+                notify24Hours = reminder.notify24Hours,
+                notifyDueNow = reminder.notifyDueNow,
+                planId = reminder.planId
+            )
+            insertOccurrence(newOcc)
+            return newOcc
+        }
+
+        val existingPending = pendingList.first()
+
+        // 3. Reconcile pending occurrence date using RecurrenceEngine 2.0
+        val newDate = if (reminder.isRecurring()) {
+            RecurrenceEngine.calculateFirstDueDate(
+                baseDateStr = reminder.date,
+                rule = reminder.toRecurrenceRule(),
+                searchFromDateStr = LocalDate.now().toString()
+            ) ?: reminder.date
+        } else {
+            reminder.date
+        }
+
+        // 4. Reconcile pending occurrence in-place (preserving occurrence ID, clearing stale snooze)
+        val updatedPending = existingPending.copy(
+            title = reminder.title,
+            priority = reminder.priority,
+            date = newDate,
+            time = reminder.time,
+            snoozedUntilMs = null, // Clears stale snooze state on series edit
+            notify7Days = reminder.notify7Days,
+            notify24Hours = reminder.notify24Hours,
+            notifyDueNow = reminder.notifyDueNow,
+            planId = reminder.planId
+        )
+        updateOccurrence(updatedPending)
+        return updatedPending
     }
 }
 

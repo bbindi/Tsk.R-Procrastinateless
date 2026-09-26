@@ -22,6 +22,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.TskR.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -45,6 +46,12 @@
         <!-- BroadcastReceiver triggered by AlarmManager -->
         <receiver
             android:name=".receiver.AlarmReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- Notification Action Receiver for direct Complete and Snooze actions -->
+        <receiver
+            android:name=".receiver.NotificationActionReceiver"
             android:enabled="true"
             android:exported="false" />
 

@@ -36,8 +36,21 @@ class PersonalityEngine(
     fun getMessage(context: PersonalityContext): PersonalityContent {
         return try {
             val poolId = selectPool(context)
-            val messages = MessagePools.getPool(poolId)
+            var messages = MessagePools.getPool(poolId)
             
+            // Fallback to base mission pools if sub-pool is empty
+            if (messages.isEmpty()) {
+                val fallbackPoolId = when (context.actionType) {
+                    ActionType.TASK_CREATED -> MessagePools.TASK_CREATED
+                    ActionType.COMPLETION -> MessagePools.COMPLETION_NORMAL
+                    ActionType.MISSION_MODE_WARNING -> MessagePools.MISSION_MODE_WARNING
+                    ActionType.MISSION_MODE_DUE -> MessagePools.MISSION_MODE_DUE
+                    ActionType.MISSION_MODE_COMPLETION -> MessagePools.MISSION_MODE_COMPLETION
+                    else -> MessagePools.FALLBACK_MESSAGE
+                }
+                messages = MessagePools.getPool(fallbackPoolId)
+            }
+
             if (messages.isEmpty()) {
                 return PersonalityContent(MessagePools.FALLBACK_MESSAGE)
             }
@@ -72,27 +85,66 @@ class PersonalityEngine(
     private fun selectPool(context: PersonalityContext): String {
         return when (context.actionType) {
             ActionType.ONBOARDING -> MessagePools.ONBOARDING
-            ActionType.TASK_CREATED -> MessagePools.TASK_CREATED
+            ActionType.TASK_CREATED -> {
+                val hour = context.timeOfDayHour
+                if (hour != null && (hour >= 22 || hour < 5)) MessagePools.TASK_CREATED_LATE_NIGHT
+                else MessagePools.TASK_CREATED
+            }
             ActionType.TASK_UPDATED -> MessagePools.TASK_UPDATED
             ActionType.TASK_DELETED -> MessagePools.TASK_DELETED
             ActionType.TASK_RESTORED -> MessagePools.TASK_RESTORED
             ActionType.TASK_APPROACHING -> MessagePools.TASK_APPROACHING
             ActionType.TASK_DUE -> if (context.urgency == UrgencyLevel.IMPORTANT) MessagePools.TASK_DUE_IMPORTANT else MessagePools.TASK_DUE_NORMAL
             ActionType.TASK_OVERDUE -> if (context.overdueMinutes > 60) MessagePools.TASK_OVERDUE_LATE else MessagePools.TASK_OVERDUE_EARLY
-            ActionType.TASK_SNOOZED -> MessagePools.TASK_SNOOZED
+            ActionType.TASK_SNOOZED -> {
+                when {
+                    context.snoozeCount >= 3 -> MessagePools.TASK_SNOOZED_REPEATED_HIGH
+                    context.snoozeCount == 2 -> MessagePools.TASK_SNOOZED_REPEATED
+                    else -> MessagePools.TASK_SNOOZED
+                }
+            }
             ActionType.COMPLETION -> {
-                if (context.streak >= 3) MessagePools.COMPLETION_STREAK
-                else if (context.isRecurring) MessagePools.COMPLETION_RECURRING
-                else MessagePools.COMPLETION_NORMAL
+                when {
+                    context.isEarlyCompletion -> MessagePools.COMPLETION_EARLY
+                    context.streak >= 3 -> MessagePools.COMPLETION_STREAK
+                    context.isRecurring -> MessagePools.COMPLETION_RECURRING
+                    else -> MessagePools.COMPLETION_NORMAL
+                }
             }
             ActionType.EMPTY_STATE -> {
                 if (context.isAllCaughtUp) MessagePools.EMPTY_STATE_ALL_CAUGHT_UP
                 else MessagePools.EMPTY_STATE_NO_TASKS
             }
-            ActionType.MISSION_MODE_WARNING -> MessagePools.MISSION_MODE_WARNING
-            ActionType.MISSION_MODE_DUE -> MessagePools.MISSION_MODE_DUE
-            ActionType.MISSION_MODE_COMPLETION -> MessagePools.MISSION_MODE_COMPLETION
-            ActionType.WIDGET -> MessagePools.WIDGET
+            ActionType.MISSION_MODE_WARNING -> {
+                if (context.planProgressRatio >= 0.1f || context.planTotalTasks > 0) MessagePools.MISSION_MODE_WARNING_PLAN
+                else MessagePools.MISSION_MODE_WARNING
+            }
+            ActionType.MISSION_MODE_DUE -> {
+                when {
+                    context.overdueMinutes > 30 -> MessagePools.MISSION_MODE_DUE_OVERDUE
+                    context.snoozeCount >= 2 -> MessagePools.MISSION_MODE_DUE_SNOOZED_REPEATED
+                    context.snoozeCount > 0 -> MessagePools.MISSION_MODE_DUE_SNOOZED
+                    context.isRecurring -> MessagePools.MISSION_MODE_DUE_RECURRING
+                    context.planProgressRatio >= 0.1f || context.planTotalTasks > 0 -> MessagePools.MISSION_MODE_DUE_PLAN
+                    else -> MessagePools.MISSION_MODE_DUE
+                }
+            }
+            ActionType.MISSION_MODE_COMPLETION -> {
+                when {
+                    context.isEarlyCompletion -> MessagePools.MISSION_MODE_COMPLETION_EARLY
+                    context.streak >= 3 -> MessagePools.MISSION_MODE_COMPLETION_STREAK
+                    context.isRecurring -> MessagePools.MISSION_MODE_COMPLETION_RECURRING
+                    else -> MessagePools.MISSION_MODE_COMPLETION
+                }
+            }
+            ActionType.WIDGET -> {
+                when {
+                    context.isAllCaughtUp -> MessagePools.EMPTY_STATE_ALL_CAUGHT_UP
+                    context.oldestOverdueMinutes > 60 || context.overdueMinutes > 60 -> MessagePools.WIDGET_OVERDUE_LATE
+                    context.oldestOverdueMinutes > 0 || context.overdueMinutes > 0 -> MessagePools.WIDGET_OVERDUE
+                    else -> MessagePools.WIDGET
+                }
+            }
             ActionType.PLAN_CREATED -> MessagePools.PLAN_CREATED
             ActionType.PLAN_NO_TASKS -> MessagePools.PLAN_NO_TASKS
             ActionType.PLAN_PROGRESS_MILESTONE -> {

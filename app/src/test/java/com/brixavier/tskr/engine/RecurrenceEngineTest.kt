@@ -1,6 +1,12 @@
 package com.brixavier.tskr.engine
 
+import com.brixavier.tskr.model.MonthlyMode
+import com.brixavier.tskr.model.RecurrenceDayOfWeek
+import com.brixavier.tskr.model.RecurrenceOrdinal
+import com.brixavier.tskr.model.RecurrenceRule
+import com.brixavier.tskr.model.RecurrenceType
 import com.brixavier.tskr.model.Reminder
+import com.brixavier.tskr.model.YearlyMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -339,5 +345,181 @@ class RecurrenceEngineTest {
             afterDateStr = "2028-02-28"
         )
         assertEquals("2028-02-29", next)
+    }
+
+    // --- APPROVED A0.5C EXECUTABLE EXAMPLES ---
+
+    @Test
+    fun a0_5c_example1_weeklyIntervalTwo() {
+        // Selected start: Tue Sep 29, 2026. Rule: Every 2 weeks on Monday
+        val rule = RecurrenceRule(
+            type = RecurrenceType.WEEKLY,
+            interval = 2,
+            daysOfWeek = setOf(RecurrenceDayOfWeek.MONDAY)
+        )
+
+        val first = RecurrenceEngine.calculateFirstDueDate(
+            baseDateStr = "2026-09-29",
+            rule = rule,
+            searchFromDateStr = "2026-09-29"
+        )
+        assertEquals("2026-10-12", first)
+    }
+
+    @Test
+    fun a0_5c_example2_monthlyOrdinalLastThursday() {
+        // Selected start: Tue Sep 29, 2026. Rule: Every 3 months on Last Thursday
+        val rule = RecurrenceRule(
+            type = RecurrenceType.MONTHLY,
+            interval = 3,
+            monthlyMode = MonthlyMode.ORDINAL_WEEKDAY,
+            ordinal = RecurrenceOrdinal.LAST,
+            weekday = RecurrenceDayOfWeek.THURSDAY
+        )
+
+        val first = RecurrenceEngine.calculateFirstDueDate(
+            baseDateStr = "2026-09-29",
+            rule = rule,
+            searchFromDateStr = "2026-09-29"
+        )
+        assertEquals("2026-12-31", first)
+    }
+
+    @Test
+    fun a0_5c_example3_weeklyEveryWednesday() {
+        // Selected start: Tue Sep 29, 2026. Rule: Every week on Wednesday
+        val rule = RecurrenceRule(
+            type = RecurrenceType.WEEKLY,
+            interval = 1,
+            daysOfWeek = setOf(RecurrenceDayOfWeek.WEDNESDAY)
+        )
+
+        val first = RecurrenceEngine.calculateFirstDueDate(
+            baseDateStr = "2026-09-29",
+            rule = rule,
+            searchFromDateStr = "2026-09-29"
+        )
+        assertEquals("2026-09-30", first)
+    }
+
+    @Test
+    fun a0_5c_example4_monthlyDayFifteenEveryMonth() {
+        // Selected start: Tue Sep 29, 2026. Rule: Day 15 of every 1 month
+        val rule = RecurrenceRule(
+            type = RecurrenceType.MONTHLY,
+            interval = 1,
+            monthlyMode = MonthlyMode.DAY_OF_MONTH
+        )
+
+        val first = RecurrenceEngine.calculateFirstDueDate(
+            baseDateStr = "2026-09-15",
+            rule = rule,
+            searchFromDateStr = "2026-09-29"
+        )
+        assertEquals("2026-10-15", first)
+    }
+
+    @Test
+    fun a0_5c_example4_monthlyDayFifteenEveryTwoMonths() {
+        // Selected start: Tue Sep 29, 2026. Rule: Day 15 of every 2 months
+        val rule = RecurrenceRule(
+            type = RecurrenceType.MONTHLY,
+            interval = 2,
+            monthlyMode = MonthlyMode.DAY_OF_MONTH
+        )
+
+        val first = RecurrenceEngine.calculateFirstDueDate(
+            baseDateStr = "2026-09-15",
+            rule = rule,
+            searchFromDateStr = "2026-09-29"
+        )
+        assertEquals("2026-11-15", first)
+    }
+
+    @Test
+    fun a0_5c_example5_monthlyLastFridayEveryMonth() {
+        // Selected start: Tue Sep 29, 2026. Rule: Every month on Last Friday
+        val rule = RecurrenceRule(
+            type = RecurrenceType.MONTHLY,
+            interval = 1,
+            monthlyMode = MonthlyMode.ORDINAL_WEEKDAY,
+            ordinal = RecurrenceOrdinal.LAST,
+            weekday = RecurrenceDayOfWeek.FRIDAY
+        )
+
+        val first = RecurrenceEngine.calculateFirstDueDate(
+            baseDateStr = "2026-09-29",
+            rule = rule,
+            searchFromDateStr = "2026-09-29"
+        )
+        assertEquals("2026-10-30", first)
+    }
+
+    @Test
+    fun a0_5c_example6_weeklyMultiDaySequence() {
+        // Selected start: Tue Sep 29, 2026. Rule: Every 2 weeks on Monday + Wednesday
+        val rule = RecurrenceRule(
+            type = RecurrenceType.WEEKLY,
+            interval = 2,
+            daysOfWeek = setOf(RecurrenceDayOfWeek.MONDAY, RecurrenceDayOfWeek.WEDNESDAY)
+        )
+
+        val occ1 = RecurrenceEngine.calculateFirstDueDate("2026-09-29", rule, "2026-09-29")
+        assertEquals("2026-09-30", occ1)
+
+        val occ2 = RecurrenceEngine.calculateNextDueDate("2026-09-29", rule, occ1)
+        assertEquals("2026-10-12", occ2)
+
+        val occ3 = RecurrenceEngine.calculateNextDueDate("2026-09-29", rule, occ2)
+        assertEquals("2026-10-14", occ3)
+
+        val occ4 = RecurrenceEngine.calculateNextDueDate("2026-09-29", rule, occ3)
+        assertEquals("2026-10-26", occ4)
+
+        val occ5 = RecurrenceEngine.calculateNextDueDate("2026-09-29", rule, occ4)
+        assertEquals("2026-10-28", occ5)
+    }
+
+    // --- RECURRENCE 2.0 YEARLY TESTS ---
+
+    @Test
+    fun yearly_specificDate_leapYearSequence() {
+        val rule = RecurrenceRule(
+            type = RecurrenceType.YEARLY,
+            interval = 1,
+            yearlyMode = YearlyMode.SPECIFIC_DATE,
+            yearlyMonth = 2
+        )
+
+        val y2028 = RecurrenceEngine.calculateNextDueDate("2028-02-29", rule, "2028-02-29")
+        assertEquals("2029-02-28", y2028)
+
+        val y2029 = RecurrenceEngine.calculateNextDueDate("2028-02-29", rule, y2028)
+        assertEquals("2030-02-28", y2029)
+
+        val y2030 = RecurrenceEngine.calculateNextDueDate("2028-02-29", rule, y2029)
+        assertEquals("2031-02-28", y2030)
+
+        val y2031 = RecurrenceEngine.calculateNextDueDate("2028-02-29", rule, y2030)
+        assertEquals("2032-02-29", y2031)
+    }
+
+    @Test
+    fun yearly_ordinalWeekday_thanksgivingFourthThursdayInNovember() {
+        // Thanksgiving: Fourth Thursday of November
+        val rule = RecurrenceRule(
+            type = RecurrenceType.YEARLY,
+            interval = 1,
+            yearlyMode = YearlyMode.ORDINAL_WEEKDAY,
+            ordinal = RecurrenceOrdinal.FOURTH,
+            weekday = RecurrenceDayOfWeek.THURSDAY,
+            yearlyMonth = 11
+        )
+
+        val y2026 = RecurrenceEngine.calculateFirstDueDate("2026-01-01", rule, "2026-01-01")
+        assertEquals("2026-11-26", y2026)
+
+        val y2027 = RecurrenceEngine.calculateNextDueDate("2026-01-01", rule, y2026)
+        assertEquals("2027-11-25", y2027)
     }
 }

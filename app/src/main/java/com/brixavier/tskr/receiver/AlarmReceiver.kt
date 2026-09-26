@@ -23,6 +23,7 @@ import com.brixavier.tskr.personality.PersonalityIntensity
 import com.brixavier.tskr.personality.UrgencyLevel
 import com.brixavier.tskr.scheduler.ReminderScheduler
 import com.brixavier.tskr.sound.NotificationChannelManager
+import com.brixavier.tskr.sound.NotificationIdHelper
 import com.brixavier.tskr.sound.SoundType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -95,7 +96,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 val personalityQuote = personalityEngine.getMessage(ctx).text
                 val fullMessage = "$warningMessage\n\n\"$personalityQuote\""
 
-                val notificationId = getNotificationId(occurrenceId, stage)
+                val notificationId = NotificationIdHelper.getNotificationId(occurrenceId, stage)
                 showNotification(context, notificationId, reminderTitle, fullMessage, stage, occurrenceId, priority)
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling alarm receive for ID: $occurrenceId", e)
@@ -103,21 +104,6 @@ class AlarmReceiver : BroadcastReceiver() {
                 pendingResult.finish()
             }
         }
-    }
-
-    /**
-     * Generates a deterministic, stage-aware notification ID.
-     * Uses a 24-bit mask to prevent integer overflow when multiplied by 10.
-     */
-    private fun getNotificationId(id: String, stage: String): Int {
-        val hash = id.hashCode() and 0x00ffffff
-        val offset = when (stage) {
-            ReminderScheduler.STAGE_7_DAYS -> 1
-            ReminderScheduler.STAGE_24_HOURS -> 2
-            ReminderScheduler.STAGE_DUE_NOW -> 3
-            else -> 9
-        }
-        return hash * 10 + offset
     }
 
     private fun showNotification(
@@ -199,6 +185,52 @@ class AlarmReceiver : BroadcastReceiver() {
             .apply {
                 if (Reminder.isImportant(priority)) {
                     setFullScreenIntent(fullScreenPendingIntent, true)
+
+                    // Add direct "✓ Complete" Notification Action for Important Reminders (V2-N.2-B)
+                    val completeIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+                        action = NotificationActionReceiver.ACTION_COMPLETE
+                        putExtra(NotificationActionReceiver.EXTRA_OCCURRENCE_ID, reminderId)
+                        putExtra(NotificationActionReceiver.EXTRA_TEMPLATE_ID, reminderId)
+                        putExtra(NotificationActionReceiver.EXTRA_ALARM_STAGE, stage)
+                    }
+
+                    val completePendingIntent = PendingIntent.getBroadcast(
+                        context,
+                        notificationId + 2000,
+                        completeIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+
+                    val completeAction = NotificationCompat.Action.Builder(
+                        null,
+                        "✓ Complete",
+                        completePendingIntent
+                    ).build()
+
+                    addAction(completeAction)
+
+                    // Add direct "⏰ Snooze (+5m)" Notification Action for Important Reminders (V2-N.2-C)
+                    val snoozeIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+                        action = NotificationActionReceiver.ACTION_SNOOZE
+                        putExtra(NotificationActionReceiver.EXTRA_OCCURRENCE_ID, reminderId)
+                        putExtra(NotificationActionReceiver.EXTRA_TEMPLATE_ID, reminderId)
+                        putExtra(NotificationActionReceiver.EXTRA_ALARM_STAGE, stage)
+                    }
+
+                    val snoozePendingIntent = PendingIntent.getBroadcast(
+                        context,
+                        notificationId + 3000,
+                        snoozeIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+
+                    val snoozeAction = NotificationCompat.Action.Builder(
+                        null,
+                        "⏰ Snooze (+5m)",
+                        snoozePendingIntent
+                    ).build()
+
+                    addAction(snoozeAction)
                 }
             }
             .setAutoCancel(true)

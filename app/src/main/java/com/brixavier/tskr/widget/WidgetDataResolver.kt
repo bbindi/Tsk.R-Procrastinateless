@@ -5,12 +5,16 @@ import com.brixavier.tskr.model.Plan
 import com.brixavier.tskr.model.Reminder
 import com.brixavier.tskr.model.ReminderOccurrence
 import com.brixavier.tskr.personality.ActionType
+import com.brixavier.tskr.personality.BehavioralContextResolver
 import com.brixavier.tskr.personality.MessagePools
 import com.brixavier.tskr.personality.PersonalityContext
+import com.brixavier.tskr.personality.PersonalityEngine
 import com.brixavier.tskr.personality.PersonalityIntensity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.round
 
 /**
  * Presentation model for task items displayed in the Glance widget.
@@ -50,7 +54,7 @@ data class WidgetUiState(
 
     fun getPlanProgressPercent(): Int {
         if (activePlanTotalTasks <= 0) return 0
-        return ((activePlanCompletedTasks.toFloat() / activePlanTotalTasks.toFloat()) * 100).toInt()
+        return round((activePlanCompletedTasks.toFloat() / activePlanTotalTasks.toFloat()) * 100).toInt()
     }
 }
 
@@ -58,6 +62,24 @@ data class WidgetUiState(
  * Read-only resolver that constructs occurrence-aware widget presentation state from Room.
  */
 object WidgetDataResolver {
+
+    private val completingOccurrenceIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    fun markCompleting(occurrenceId: String): Boolean {
+        return completingOccurrenceIds.add(occurrenceId)
+    }
+
+    fun clearCompleting(occurrenceId: String) {
+        completingOccurrenceIds.remove(occurrenceId)
+    }
+
+    fun isCompleting(occurrenceId: String): Boolean {
+        return completingOccurrenceIds.contains(occurrenceId)
+    }
+
+    fun clearAllCompleting() {
+        completingOccurrenceIds.clear()
+    }
 
     suspend fun resolveWidgetState(
         database: ReminderDatabase,
@@ -71,7 +93,11 @@ object WidgetDataResolver {
         val items = mapPendingOccurrencesToWidgetItems(pendingOccurrences, templateMap, emptyMap(), nowStr)
 
         val totalPending = items.size
-        val overdueCount = items.count { "${it.date} ${it.time}" < nowStr }
+        val overdueItems = items.filter { "${it.date} ${it.time}" < nowStr }
+        val overdueCount = overdueItems.size
+        val oldestOverdueMinutes = overdueItems.maxOfOrNull { item ->
+            BehavioralContextResolver.calculateOverdueMinutes(item.date, item.time, nowStr)
+        } ?: 0
         val hasImportant = items.any { it.isImportant() }
 
         val limitedItems = items.take(limit)
@@ -86,7 +112,8 @@ object WidgetDataResolver {
         val personalityContext = PersonalityContext(
             actionType = ActionType.WIDGET,
             intensity = intensity,
-            overdueMinutes = if (overdueCount > 0) 60 else 0,
+            overdueMinutes = oldestOverdueMinutes,
+            oldestOverdueMinutes = oldestOverdueMinutes,
             isAllCaughtUp = items.isEmpty()
         )
 
@@ -132,13 +159,15 @@ object WidgetDataResolver {
     ): String {
         val poolId = when {
             context.isAllCaughtUp -> MessagePools.EMPTY_STATE_ALL_CAUGHT_UP
+            context.oldestOverdueMinutes > 60 || context.overdueMinutes > 60 -> MessagePools.WIDGET_OVERDUE_LATE
+            context.oldestOverdueMinutes > 0 || context.overdueMinutes > 0 -> MessagePools.WIDGET_OVERDUE
             context.intensity == PersonalityIntensity.ACCOUNTABILITY -> MessagePools.TASK_DUE_IMPORTANT
             else -> MessagePools.WIDGET
         }
         val messages = MessagePools.getPool(poolId)
         if (messages.isEmpty()) return MessagePools.FALLBACK_MESSAGE
 
-        val seed = "$dateSeed-${context.intensity.name}-${context.isAllCaughtUp}"
+        val seed = "$dateSeed-${context.intensity.name}-${context.isAllCaughtUp}-${context.oldestOverdueMinutes > 0}"
         val hash = Math.abs(seed.hashCode())
         val index = hash % messages.size
         return messages[index]
@@ -155,6 +184,8 @@ object WidgetDataResolver {
         nowStr: String = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())
     ): List<WidgetTaskItem> {
         val widgetItems = pendingOccurrences.mapNotNull { occ ->
+            if (isCompleting(occ.id)) return@mapNotNull null
+
             val tmpl = occ.templateId?.let { templateMap[it] }
             if (tmpl == null || !tmpl.isActive) return@mapNotNull null
 

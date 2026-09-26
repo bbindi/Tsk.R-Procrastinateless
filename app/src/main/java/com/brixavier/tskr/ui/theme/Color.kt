@@ -9,6 +9,20 @@ val WarningOrange = Color(0xFFFF9800)
 val SuccessGreen = Color(0xFF4CAF50)
 val SecondaryGray = Color(0xFF757575)
 
+// Semantic Task Status Colors
+val StatusOverdueLight = Color(0xFFC62828)
+val StatusOverdueDark = Color(0xFFFF5252)
+
+val StatusUpcomingLight = Color(0xFFE65100)
+val StatusUpcomingDark = Color(0xFFFFB74D)
+
+val StatusCompletedLight = Color(0xFF2E7D32)
+val StatusCompletedDark = Color(0xFF69F0AE)
+
+fun getStatusOverdueColor(isDark: Boolean): Color = if (isDark) StatusOverdueDark else StatusOverdueLight
+fun getStatusUpcomingColor(isDark: Boolean): Color = if (isDark) StatusUpcomingDark else StatusUpcomingLight
+fun getStatusCompletedColor(isDark: Boolean): Color = if (isDark) StatusCompletedDark else StatusCompletedLight
+
 // Theme Colors - Dark
 val DarkPrimary = PrimaryBlue
 val DarkOnPrimary = Color(0xFFFFFFFF)
@@ -28,8 +42,8 @@ val DarkError = CriticalPurple
 // Theme Colors - Light
 val LightPrimary = PrimaryBlue
 val LightOnPrimary = Color.White
-val LightBackground = Color(0xFFF8F9FA)
-val LightOnBackground = Color(0xFF212529)
-val LightSurface = Color.White
-val LightOnSurface = Color(0xFF212529)
-val LightOutline = Color(0xFFCED4DA)
+val LightBackground = Color(0xFFFDFBFF)
+val LightOnBackground = Color(0xFF191C1E)
+val LightSurface = Color(0xFFFDFBFF)
+val LightOnSurface = Color(0xFF191C1E)
+val LightOutline = Color(0xFF74777F)

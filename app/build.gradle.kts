@@ -94,6 +94,9 @@ dependencies {
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
 
+    // Compose Rich Editor (Mohamed Rejeb)
+    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.2.0")
+
     // WorkManager (Background Sync)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
@@ -108,6 +111,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.graphics:graphics-shapes:1.0.1")
 
     // Lifecycle and ViewModel (with Compose integration)
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
@@ -129,6 +133,11 @@ dependencies {
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("com.google.android.material:material:1.11.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.xerial:sqlite-jdbc:3.45.1.0")
+    testImplementation("androidx.room:room-testing:$roomVersion")
+    testImplementation("org.robolectric:robolectric:4.11.1")
+    testImplementation("androidx.test:core:1.5.0")
+    testImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
