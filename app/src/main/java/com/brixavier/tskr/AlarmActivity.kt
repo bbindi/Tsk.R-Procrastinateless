@@ -308,6 +308,7 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 AlarmScreen(
                     title = reminderTitle,
                     reminder = reminder,
+                    occurrence = occurrence,
                     plan = plan,
                     quote = dynamicQuote,
                     alarmStage = alarmStage,
@@ -671,6 +672,7 @@ fun OrganicTaskHeroContainer(
 fun AlarmScreen(
     title: String,
     reminder: Reminder?,
+    occurrence: ReminderOccurrence? = null,
     plan: Plan?,
     quote: String,
     alarmStage: String,
@@ -877,13 +879,15 @@ fun AlarmScreen(
                         )
 
                         // Scheduled Time / Relative Span
-                        if (reminder != null && !isCompleted) {
+                        val displayDate = occurrence?.date ?: reminder?.date ?: ""
+                        val displayTime = occurrence?.time ?: reminder?.time ?: ""
+                        if (displayDate.isNotBlank() && displayTime.isNotBlank() && !isCompleted) {
                             Surface(
                                 color = palette.timePillContainer,
                                 shape = CircleShape
                             ) {
                                 Text(
-                                    text = "⏰ ${getRelativeTimeSpan(reminder.date, reminder.time)}",
+                                    text = "⏰ ${getRelativeTimeSpan(displayDate, displayTime)}",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = palette.timePillText,
                                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),

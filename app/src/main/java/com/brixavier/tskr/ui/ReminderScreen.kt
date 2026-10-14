@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.key
+import com.brixavier.tskr.BuildConfig
 import com.brixavier.tskr.model.MonthlyMode
 import com.brixavier.tskr.model.RecurrenceDayOfWeek
 import com.brixavier.tskr.model.RecurrenceOrdinal
@@ -105,27 +106,44 @@ enum class Screen {
 
 /**
  * Helper to calculate relative time human-readable string.
+ * Supports an optional [now] parameter for deterministic unit testing.
  */
-fun getRelativeTimeSpan(dateStr: String, timeStr: String): String {
+fun getRelativeTimeSpan(dateStr: String, timeStr: String, now: Date = Date()): String {
     try {
         val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
         val targetDate = sdf.parse("$dateStr $timeStr") ?: return "$dateStr $timeStr"
-        val now = Date()
         val diffMillis = targetDate.time - now.time
         val diffMinutes = diffMillis / (1000 * 60)
-        val diffHours = diffMinutes / 60
-        val diffDays = diffHours / 24
 
+        // Future / Upcoming
+        if (diffMinutes >= 0) {
+            return when {
+                diffMinutes == 0L -> "Starts in less than a minute"
+                diffMinutes in 1..59 -> "Starts in $diffMinutes minutes"
+                diffMinutes in 60..119 -> "In 1 hour"
+                diffMinutes in 120..1439 -> {
+                    val hours = (diffMinutes + 30) / 60
+                    "In $hours hours"
+                }
+                else -> {
+                    val calDiffDays = (targetDate.time - now.time) / (1000 * 60 * 60 * 24)
+                    if (calDiffDays <= 1) "Tomorrow" else "In $calDiffDays days"
+                }
+            }
+        }
+
+        // Past / Overdue
+        val overdueMinutes = -diffMinutes
         return when {
-            diffMinutes in 0..59 -> "Starts in $diffMinutes minutes"
-            diffMinutes in -59..-1 -> "Overdue by ${-diffMinutes} minutes"
-            diffHours in 1..23 -> "In $diffHours hours"
-            diffHours in -23..-1 -> "Overdue by ${-diffHours} hours"
-            diffDays == 1L -> "Tomorrow"
-            diffDays == -1L -> "Yesterday"
-            diffDays > 1 -> "In $diffDays days"
-            diffDays < -1 -> "Overdue by ${-diffDays} days"
-            else -> "Today at $timeStr"
+            overdueMinutes in 1..119 -> "Overdue by $overdueMinutes minutes"
+            overdueMinutes in 120..1439 -> {
+                val hours = (overdueMinutes + 30) / 60
+                "Overdue by $hours hours"
+            }
+            else -> {
+                val calDiffDays = (now.time - targetDate.time) / (1000 * 60 * 60 * 24)
+                if (calDiffDays <= 1) "Yesterday" else "Overdue by $calDiffDays days"
+            }
         }
     } catch (_: Exception) {
         return "$dateStr $timeStr"
@@ -1273,7 +1291,7 @@ fun ReminderScreen(
     initialEditingReminderId: String? = null,
     isExactAlarmAllowed: Boolean = true,
     isBatteryOptimizationIgnored: Boolean = true,
-    appVersion: String = "1.0.1",
+    appVersion: String = BuildConfig.VERSION_NAME,
     onOpenAlarmSettings: () -> Unit = {},
     onOpenBatterySettings: () -> Unit = {},
     onPickSound: (SoundType) -> Unit = {},
@@ -1324,25 +1342,28 @@ fun ReminderScreen(
     }
 
     // Dynamically calculate greeting based on local clock
-    val calendar = Calendar.getInstance()
-    val hour = calendar.get(Calendar.HOUR_OF_DAY)
-    val (greeting, icon) = when (hour) {
-        in 0..11 -> "Good morning" to "☀️"
-        in 12..16 -> "Good afternoon" to "🌤️"
-        else -> "Good evening" to "🌙"
+    val (greeting, icon) = remember {
+        val calendar = Calendar.getInstance()
+        val hour = calendar.get(Calendar.HOUR_OF_DAY)
+        when (hour) {
+            in 0..11 -> "Good morning" to "☀️"
+            in 12..16 -> "Good afternoon" to "🌤️"
+            else -> "Good evening" to "🌙"
+        }
     }
 
-    // Split reminders into active list and completed history
-    val activeReminders = state.reminders.filter { it.isActive }.sortedBy { "${it.date} ${it.time}" }
-    val inactiveReminders = state.reminders.filter { !it.isActive }
+    // Split reminders into active list
+    val activeReminders = remember(state.reminders) {
+        state.reminders.filter { it.isActive }.sortedBy { "${it.date} ${it.time}" }
+    }
 
     // Daily progress calculation based on today's workload (and active overdue tasks)
     val todayDate = remember { LocalDate.now().toString() }
     val todaysReminders = remember(state.reminders, todayDate) {
         state.reminders.filter { it.date == todayDate || (it.isActive && it.date < todayDate) }
     }
-    val todaysActive = todaysReminders.count { it.isActive }
     val todaysTotal = todaysReminders.size
+    val todaysActive = remember(todaysReminders) { todaysReminders.count { it.isActive } }
     val todaysCompleted = todaysTotal - todaysActive
     val progress = if (todaysTotal > 0) todaysCompleted.toFloat() / todaysTotal else 0f
 

@@ -34,8 +34,8 @@ android {
         applicationId = "com.brixavier.tskr"
         minSdk = 26
         targetSdk = 37
-        versionCode = 5
-        versionName = "1.0.2"
+        versionCode = 6
+        versionName = "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -99,6 +99,10 @@ dependencies {
 
     // WorkManager (Background Sync)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // Google Play In-App Updates
+    implementation("com.google.android.play:app-update:2.1.0")
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
 
     // Jetpack Compose BOM & Core
     val composeBom = platform("androidx.compose:compose-bom:2026.06.01")

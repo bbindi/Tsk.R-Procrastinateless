@@ -11,13 +11,26 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.Alignment
+import com.brixavier.tskr.update.InAppUpdateManager
+import com.brixavier.tskr.update.InAppUpdateStatus
+import com.brixavier.tskr.update.PlayInAppUpdateManager
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.animation.AnimatedContent
+ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -164,9 +177,27 @@ class MainActivity : ComponentActivity() {
         soundPickerLauncher.launch(intent)
     }
 
+    private val updateLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK) {
+            Log.d("MainActivity", "In-app update flow canceled or failed (resultCode: ${result.resultCode}).")
+        }
+    }
+
+    private val inAppUpdateManager: InAppUpdateManager by lazy {
+        PlayInAppUpdateManager(this)
+    }
+
     override fun onResume() {
         super.onResume()
         updatePermissionStates()
+        inAppUpdateManager.checkForUpdate()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        inAppUpdateManager.unregisterListener()
     }
 
     private fun updatePermissionStates() {
@@ -185,9 +216,9 @@ class MainActivity : ComponentActivity() {
             } else {
                 packageManager.getPackageInfo(packageName, 0)
             }
-            packageInfo.versionName ?: "1.0.2"
+            packageInfo.versionName ?: BuildConfig.VERSION_NAME
         } catch (_: Exception) {
-            "1.0.2"
+            BuildConfig.VERSION_NAME
         }
     }
 
@@ -271,6 +302,7 @@ class MainActivity : ComponentActivity() {
                         )
                     } else {
                         val state by reminderBloc.state.collectAsStateWithLifecycle()
+                        val updateStatus by inAppUpdateManager.updateStatus.collectAsStateWithLifecycle()
                         val shouldOpenSheet = intent.getBooleanExtra(EXTRA_OPEN_ADD_SHEET, false)
                         var initialSheetShow by remember { mutableStateOf(shouldOpenSheet) }
                         
@@ -362,12 +394,14 @@ class MainActivity : ComponentActivity() {
                         }
 
                         // Preferred exact occurrence match -> fallback to template match for legacy intents
-                        val selectedUiItem = state?.uiItems?.let { uiItems ->
-                            if (selectedReminderId.isNullOrBlank()) {
-                                null
-                            } else {
-                                uiItems.find { it.occurrenceId == selectedReminderId }
-                                    ?: uiItems.find { it.templateId == selectedReminderId }
+                        val selectedUiItem = remember(selectedReminderId, state?.uiItems) {
+                            state?.uiItems?.let { uiItems ->
+                                if (selectedReminderId.isNullOrBlank()) {
+                                    null
+                                } else {
+                                    uiItems.find { it.occurrenceId == selectedReminderId }
+                                        ?: uiItems.find { it.templateId == selectedReminderId }
+                                }
                             }
                         }
 
@@ -528,6 +562,43 @@ class MainActivity : ComponentActivity() {
                                                 taskPreselectedReminderId = null
                                             }
                                         )
+                                    }
+                                }
+
+                                if (updateStatus is InAppUpdateStatus.UpdateAvailable) {
+                                    Snackbar(
+                                        action = {
+                                            TextButton(onClick = {
+                                                inAppUpdateManager.startFlexibleUpdate(this@MainActivity, updateLauncher)
+                                            }) {
+                                                Text("UPDATE", fontWeight = FontWeight.Bold)
+                                            }
+                                        },
+                                        dismissAction = {
+                                            IconButton(onClick = { inAppUpdateManager.dismissUpdatePrompt() }) {
+                                                Icon(Icons.Default.Close, contentDescription = "Dismiss")
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .statusBarsPadding()
+                                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                                            .align(Alignment.TopCenter)
+                                    ) {
+                                        Text("A new version of Tsk.R is available.")
+                                    }
+                                } else if (updateStatus is InAppUpdateStatus.Downloaded) {
+                                    Snackbar(
+                                        action = {
+                                            TextButton(onClick = { inAppUpdateManager.completeUpdate() }) {
+                                                Text("RESTART", fontWeight = FontWeight.Bold)
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .statusBarsPadding()
+                                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                                            .align(Alignment.TopCenter)
+                                    ) {
+                                        Text("Tsk.R has been updated and is ready to restart.")
                                     }
                                 }
                             }
