@@ -7,14 +7,14 @@ import org.junit.Test
 class VersionAndReleaseConfigTest {
 
     @Test
-    fun testVersionName_isTwoZeroZero() {
-        assertEquals("2.0.0", BuildConfig.VERSION_NAME)
+    fun testVersionName_isTwoOneZero() {
+        assertEquals("2.1.0", BuildConfig.VERSION_NAME)
     }
 
     @Test
-    fun testVersionCode_isGreaterThanFive() {
-        assertTrue(BuildConfig.VERSION_CODE > 5)
-        assertEquals(6, BuildConfig.VERSION_CODE)
+    fun testVersionCode_isSevenForInternalTesting() {
+        assertTrue(BuildConfig.VERSION_CODE >= 7)
+        assertEquals(7, BuildConfig.VERSION_CODE)
     }
 
     @Test

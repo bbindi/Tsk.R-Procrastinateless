@@ -72,6 +72,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.*
+import com.brixavier.tskr.ad.AdConsentManager
+import com.brixavier.tskr.ad.AdManager
+import com.brixavier.tskr.ad.AdMobManager
+import com.brixavier.tskr.ad.UmpConsentManager
+import com.brixavier.tskr.review.InAppReviewManager
+import com.brixavier.tskr.review.PlayInAppReviewManager
 import com.brixavier.tskr.bloc.ReminderBloc
 import com.brixavier.tskr.bloc.ReminderEvent
 import com.brixavier.tskr.bloc.ReminderState
@@ -189,10 +195,26 @@ class MainActivity : ComponentActivity() {
         PlayInAppUpdateManager(this)
     }
 
+    private val adConsentManager: AdConsentManager by lazy {
+        UmpConsentManager(this)
+    }
+
+    private val adManager: AdManager by lazy {
+        AdMobManager(adConsentManager)
+    }
+
+    private val inAppReviewManager: InAppReviewManager by lazy {
+        PlayInAppReviewManager(this)
+    }
+
     override fun onResume() {
         super.onResume()
         updatePermissionStates()
         inAppUpdateManager.checkForUpdate()
+        inAppReviewManager.requestReviewIfEligible(this)
+        if (adManager.canRequestAds.value) {
+            adManager.initializeSdk(this)
+        }
     }
 
     override fun onDestroy() {
@@ -240,6 +262,8 @@ class MainActivity : ComponentActivity() {
         
         val sharedPref = getSharedPreferences("tsk_r_prefs", MODE_PRIVATE)
         enqueueWidgetUpdate()
+        inAppReviewManager.eligibilityEngine.recordSessionLaunch()
+        adManager.gatherConsentAndInitialize(this)
         
         setContent {
             val themeModeStr = sharedPref.getString("theme_mode", AppThemeMode.SYSTEM.name) ?: AppThemeMode.SYSTEM.name
@@ -303,6 +327,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         val state by reminderBloc.state.collectAsStateWithLifecycle()
                         val updateStatus by inAppUpdateManager.updateStatus.collectAsStateWithLifecycle()
+                        val isPrivacyRequired by adManager.isPrivacyOptionsRequired.collectAsStateWithLifecycle()
                         val shouldOpenSheet = intent.getBooleanExtra(EXTRA_OPEN_ADD_SHEET, false)
                         var initialSheetShow by remember { mutableStateOf(shouldOpenSheet) }
                         
@@ -518,6 +543,7 @@ class MainActivity : ComponentActivity() {
                                         ReminderScreen(
                                             state = state,
                                             personalityEngine = personalityEngine,
+                                            adManager = adManager,
                                             initialScreen = activeTab,
                                             initialShowBottomSheet = initialSheetShow,
                                             preselectedPlanId = taskPreselectedPlanId,
@@ -546,6 +572,9 @@ class MainActivity : ComponentActivity() {
                                             },
                                             onOpenWhatsNew = { showWhatsNewReplay = true },
                                             currentThemeMode = currentThemeMode,
+                                            isPrivacyOptionsRequired = isPrivacyRequired,
+                                            onOpenPrivacyOptions = { adManager.showPrivacyOptionsForm(this@MainActivity) },
+                                            onRateApp = { inAppReviewManager.launchPlayStoreListing(this@MainActivity) },
                                             onThemeModeChange = { newMode ->
                                                 sharedPref.edit { putString("theme_mode", newMode.name) }
                                                 currentThemeMode = newMode

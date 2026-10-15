@@ -27,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import com.brixavier.tskr.widget.TskRWidget
 import androidx.glance.appwidget.updateAll
 import com.brixavier.tskr.personality.ActionType
+import com.brixavier.tskr.review.InAppReviewEligibilityEngine
 import java.text.SimpleDateFormat
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -374,6 +375,7 @@ class ReminderBloc(
                     }
 
                     checkAndIncrementStreak()
+                    InAppReviewEligibilityEngine.create(context).recordTaskCompletion()
                 } else {
                     // Restore task: run atomic restore transaction
                     val restoredOcc = reminderDao.restoreOccurrenceTransaction(id)

@@ -168,7 +168,7 @@ class PersonalityEngineTest {
 
     @Test
     fun behavioralContextResolver_derivesEarlyCompletionCorrectly() {
-        val futureDate = "2026-10-15"
+        val futureDate = "2028-10-15"
         val futureTime = "14:00"
 
         val earlyOcc = ReminderOccurrence(

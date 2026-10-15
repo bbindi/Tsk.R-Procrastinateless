@@ -34,8 +34,41 @@ android {
         applicationId = "com.brixavier.tskr"
         minSdk = 26
         targetSdk = 37
-        versionCode = 6
-        versionName = "2.0.0"
+        versionCode = 7
+        versionName = "2.1.0"
+
+        val testAppId = "ca-app-pub-3940256099942544~3347511713"
+        val testAdUnitId = "ca-app-pub-3940256099942544/2247696110"
+
+        val rawAdMobAppId = signingProperty("adMobAppId")
+        val rawAdMobNativeAdUnitId = signingProperty("adMobNativeAdUnitId")
+
+        val adMobAppId = if (!rawAdMobAppId.isNullOrBlank()) {
+            val appIdPattern = Regex("^ca-app-pub-\\d{16}~\\d{10}$")
+            if (rawAdMobAppId != testAppId && !appIdPattern.matches(rawAdMobAppId)) {
+                logger.warn("WARNING: adMobAppId format check failed for provided custom property.")
+            }
+            rawAdMobAppId
+        } else {
+            testAppId
+        }
+
+        val adMobNativeAdUnitId = if (!rawAdMobNativeAdUnitId.isNullOrBlank()) {
+            val unitIdPattern = Regex("^ca-app-pub-\\d{16}/\\d{10}$")
+            if (rawAdMobNativeAdUnitId != testAdUnitId && !unitIdPattern.matches(rawAdMobNativeAdUnitId)) {
+                logger.warn("WARNING: adMobNativeAdUnitId format check failed for provided custom property.")
+            }
+            rawAdMobNativeAdUnitId
+        } else {
+            testAdUnitId
+        }
+
+        if (adMobAppId == testAppId || adMobNativeAdUnitId == testAdUnitId) {
+            logger.warn("\n[ADMOB BUILD WARNING] Build is using Google Sample Test AdMob IDs. Supply production adMobAppId and adMobNativeAdUnitId in release-signing.properties or environment variables prior to Google Play Store submission.\n")
+        }
+
+        manifestPlaceholders["adMobAppId"] = adMobAppId
+        buildConfigField("String", "ADMOB_NATIVE_AD_UNIT_ID", "\"$adMobNativeAdUnitId\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -89,6 +122,38 @@ android {
     }
 }
 
+tasks.register("validateProductionAdMobIds") {
+    group = "verification"
+    description = "Strictly validates that production AdMob Application ID and Native Ad Unit ID are configured and valid for production release."
+
+    doLast {
+        val testAppId = "ca-app-pub-3940256099942544~3347511713"
+        val testAdUnitId = "ca-app-pub-3940256099942544/2247696110"
+
+        val rawAppId = signingProperty("adMobAppId")
+        val rawAdUnitId = signingProperty("adMobNativeAdUnitId")
+
+        val appIdPattern = Regex("^ca-app-pub-\\d{16}~\\d{10}$")
+        val unitIdPattern = Regex("^ca-app-pub-\\d{16}/\\d{10}$")
+
+        if (rawAppId.isNullOrBlank() || rawAppId == testAppId || !appIdPattern.matches(rawAppId)) {
+            throw GradleException(
+                "PRODUCTION ADMOB ID VALIDATION FAILED: adMobAppId is missing, set to Google's sample test ID, or invalid. " +
+                "Provide a valid production AdMob App ID (ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY) in release-signing.properties or TSKR_ADMOBAPPID."
+            )
+        }
+
+        if (rawAdUnitId.isNullOrBlank() || rawAdUnitId == testAdUnitId || !unitIdPattern.matches(rawAdUnitId)) {
+            throw GradleException(
+                "PRODUCTION ADMOB ID VALIDATION FAILED: adMobNativeAdUnitId is missing, set to Google's sample test ID, or invalid. " +
+                "Provide a valid production Native Ad Unit ID (ca-app-pub-XXXXXXXXXXXXXXXX/ZZZZZZZZZZ) in release-signing.properties or TSKR_ADMOBNATIVEADUNITID."
+            )
+        }
+
+        logger.lifecycle("SUCCESS: Production AdMob IDs are valid and configured for release.")
+    }
+}
+
 dependencies {
     // Jetpack Glance (Widgets)
     implementation("androidx.glance:glance-appwidget:1.1.1")
@@ -100,9 +165,15 @@ dependencies {
     // WorkManager (Background Sync)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
-    // Google Play In-App Updates
+    // Google Play In-App Updates & Reviews
     implementation("com.google.android.play:app-update:2.1.0")
     implementation("com.google.android.play:app-update-ktx:2.1.0")
+    implementation("com.google.android.play:review:2.0.1")
+    implementation("com.google.android.play:review-ktx:2.0.1")
+
+    // Google Mobile Ads (AdMob) & User Messaging Platform (UMP) Consent SDK
+    implementation("com.google.android.gms:play-services-ads:25.5.0")
+    implementation("com.google.android.ump:user-messaging-platform:4.0.0")
 
     // Jetpack Compose BOM & Core
     val composeBom = platform("androidx.compose:compose-bom:2026.06.01")

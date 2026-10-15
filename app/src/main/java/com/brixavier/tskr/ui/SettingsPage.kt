@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PriorityHigh
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.*
@@ -43,12 +45,15 @@ fun SettingsPage(
     isBatteryOptimizationIgnored: Boolean,
     appVersion: String,
     currentThemeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    isPrivacyOptionsRequired: Boolean = false,
     onOpenAlarmSettings: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onPickSound: (SoundType) -> Unit = {},
     onResetSound: (SoundType) -> Unit = {},
     getSoundTitle: (SoundType) -> String = { "System Default" },
     onOpenWhatsNew: () -> Unit = {},
+    onOpenPrivacyOptions: () -> Unit = {},
+    onRateApp: () -> Unit = {},
     onThemeModeChange: (AppThemeMode) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -397,6 +402,83 @@ fun SettingsPage(
                             text = "Explore Plans, Calendar 2.0, and home-screen Widgets",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+
+            if (isPrivacyOptionsRequired) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenPrivacyOptions() },
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Privacy Choices",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Manage your advertising consent and privacy choices",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Rate Tsk.R Card (Permanent Play Store Listing Link)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onRateApp() },
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Star,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Rate Tsk.R",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Leave feedback or rate Tsk.R on the Google Play Store",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

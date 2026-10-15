@@ -32,7 +32,7 @@ class InAppUpdateManagerTest {
 
         override fun checkForUpdate() {
             checkCount++
-            if (_updateStatus.value is InAppUpdateStatus.Dismissed) return
+            if (_updateStatus.value is InAppUpdateStatus.Dismissed || _updateStatus.value is InAppUpdateStatus.Downloaded) return
 
             if (isUpdateAvailable && isFlexibleAllowed) {
                 _updateStatus.value = InAppUpdateStatus.UpdateAvailable
@@ -160,5 +160,15 @@ class InAppUpdateManagerTest {
 
         manager.simulateCancel()
         assertEquals(InAppUpdateStatus.Canceled, manager.updateStatus.value)
+    }
+
+    @Test
+    fun test9_checkForUpdate_preservesDownloadedState_whenUpdateAlreadyDownloaded() {
+        val manager = FakeInAppUpdateManager()
+        manager.simulateDownloadComplete()
+        assertEquals(InAppUpdateStatus.Downloaded, manager.updateStatus.value)
+
+        manager.checkForUpdate()
+        assertEquals(InAppUpdateStatus.Downloaded, manager.updateStatus.value)
     }
 }

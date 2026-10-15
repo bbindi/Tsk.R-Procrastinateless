@@ -36,6 +36,9 @@ import com.brixavier.tskr.model.PlanColor
 import com.brixavier.tskr.model.ColorSource
 import com.brixavier.tskr.model.PlanCategoryClassifier
 import com.brixavier.tskr.model.PlanCategoryColorMapping
+import com.brixavier.tskr.ad.AdManager
+import com.brixavier.tskr.ad.NativeAdCard
+import com.brixavier.tskr.ad.NativeAdEligibility
 import com.brixavier.tskr.ui.TskRPlanIcons
 import com.brixavier.tskr.ui.PlanColorResolver
 import com.brixavier.tskr.ui.theme.TskRMotion
@@ -205,6 +208,7 @@ fun TopBarHeader(
 @Composable
 fun NotesPage(
     state: ReminderState,
+    adManager: AdManager? = null,
     onEvent: (ReminderEvent) -> Unit,
     onReminderClick: (Reminder) -> Unit
 ) {
@@ -306,6 +310,7 @@ fun TasksPage(
     state: ReminderState,
     personalityEngine: PersonalityEngine,
     initialFilter: TaskFilter = TaskFilter.ALL,
+    adManager: AdManager? = null,
     onEvent: (ReminderEvent) -> Unit,
     onReminderClick: (Reminder) -> Unit = {},
     onEditTemplate: (Reminder) -> Unit,
@@ -313,6 +318,9 @@ fun TasksPage(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember(initialFilter) { mutableStateOf(initialFilter) }
+
+    val canRequestAds = adManager?.canRequestAds?.collectAsState()?.value ?: false
+    val isSdkInitialized = adManager?.isInitialized?.collectAsState()?.value ?: false
 
     val nowStr = remember {
         SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())
@@ -498,19 +506,32 @@ fun TasksPage(
                     }
                 }
             } else {
-                items(filteredReminders, key = { it.id }) { reminder ->
-                    Box(modifier = Modifier.animateItem()) {
-                        ReminderCard(
-                            reminder = reminder,
-                            plans = state.plans,
-                            onClick = { onReminderClick(reminder) },
-                            onToggle = { isActive ->
-                                onEvent(ReminderEvent.ToggleReminder(reminder.id, isActive))
-                            },
-                            onDelete = {
-                                onEvent(ReminderEvent.DeleteReminder(reminder.id))
-                            }
-                        )
+                val adIndex = NativeAdEligibility.getTaskLibraryAdIndex(filteredReminders.size)
+                val showAd = adManager != null && NativeAdEligibility.shouldShowTaskLibraryAd(
+                    taskCount = filteredReminders.size,
+                    canRequestAds = canRequestAds,
+                    isSdkInitialized = isSdkInitialized
+                )
+
+                itemsIndexed(filteredReminders, key = { _, item -> item.id }) { index, reminder ->
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(modifier = Modifier.animateItem()) {
+                            ReminderCard(
+                                reminder = reminder,
+                                plans = state.plans,
+                                onClick = { onReminderClick(reminder) },
+                                onToggle = { isActive ->
+                                    onEvent(ReminderEvent.ToggleReminder(reminder.id, isActive))
+                                },
+                                onDelete = {
+                                    onEvent(ReminderEvent.DeleteReminder(reminder.id))
+                                }
+                            )
+                        }
+
+                        if (showAd && index == adIndex - 1 && adManager != null) {
+                            NativeAdCard(adManager = adManager)
+                        }
                     }
                 }
             }
@@ -525,6 +546,7 @@ fun TasksPage(
 fun PlansPage(
     state: ReminderState,
     personalityEngine: PersonalityEngine,
+    adManager: AdManager? = null,
     onEvent: (ReminderEvent) -> Unit,
     onPlanClick: (String) -> Unit,
     onCreatePlanClick: () -> Unit,
@@ -1064,6 +1086,7 @@ fun DayViewTimeline(
 fun CalendarPage(
     state: ReminderState,
     personalityEngine: PersonalityEngine,
+    adManager: AdManager? = null,
     onEvent: (ReminderEvent) -> Unit,
     onReminderClick: (Reminder) -> Unit = {},
     onOpenSettings: () -> Unit
@@ -1299,7 +1322,11 @@ fun ReminderScreen(
     getSoundTitle: (SoundType) -> String = { "System Default" },
     onOpenWhatsNew: () -> Unit = {},
     currentThemeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    isPrivacyOptionsRequired: Boolean = false,
+    onOpenPrivacyOptions: () -> Unit = {},
+    onRateApp: () -> Unit = {},
     onThemeModeChange: (AppThemeMode) -> Unit = {},
+    adManager: AdManager? = null,
     onEvent: (ReminderEvent) -> Unit,
     onReminderClick: (Reminder) -> Unit = {},
     onPlanClick: (String) -> Unit = {},
@@ -1312,6 +1339,9 @@ fun ReminderScreen(
         }
         return
     }
+
+    val canRequestAds = adManager?.canRequestAds?.collectAsState()?.value ?: false
+    val isSdkInitialized = adManager?.isInitialized?.collectAsState()?.value ?: false
 
     var showBottomSheet by remember { mutableStateOf(initialShowBottomSheet) }
     var editingReminder by remember {
@@ -1984,12 +2014,20 @@ fun ReminderScreen(
                                 }
                             }
                         }
+
+                        // 7. Single Native Ad Placement on Dashboard (Placed after Plans section at bottom of main content)
+                        if (adManager != null && NativeAdEligibility.shouldShowDashboardAd(canRequestAds, isSdkInitialized)) {
+                            item {
+                                NativeAdCard(adManager = adManager)
+                            }
+                        }
                     }
                 }
                 Screen.Tasks -> {
                     TasksPage(
                         state = state,
                         personalityEngine = personalityEngine,
+                        adManager = adManager,
                         initialFilter = tasksInitialFilter,
                         onEvent = onEvent,
                         onReminderClick = onReminderClick,
@@ -2026,12 +2064,15 @@ fun ReminderScreen(
                         isBatteryOptimizationIgnored = isBatteryOptimizationIgnored,
                         appVersion = appVersion,
                         currentThemeMode = currentThemeMode,
+                        isPrivacyOptionsRequired = isPrivacyOptionsRequired,
                         onOpenAlarmSettings = onOpenAlarmSettings,
                         onOpenBatterySettings = onOpenBatterySettings,
                         onPickSound = onPickSound,
                         onResetSound = onResetSound,
                         getSoundTitle = getSoundTitle,
                         onOpenWhatsNew = onOpenWhatsNew,
+                        onOpenPrivacyOptions = onOpenPrivacyOptions,
+                        onRateApp = onRateApp,
                         onThemeModeChange = onThemeModeChange
                     )
                 }

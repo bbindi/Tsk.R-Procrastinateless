@@ -86,7 +86,10 @@ class PlayInAppUpdateManager(
 
                 when (appUpdateInfo.updateAvailability()) {
                     UpdateAvailability.UPDATE_AVAILABLE -> {
-                        if (appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)) {
+                        if (appUpdateInfo.installStatus() == InstallStatus.DOWNLOADED) {
+                            Log.d(TAG, "Update is already DOWNLOADED.")
+                            _updateStatus.value = InAppUpdateStatus.Downloaded
+                        } else if (appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)) {
                             Log.d(TAG, "Flexible update available.")
                             _updateStatus.value = InAppUpdateStatus.UpdateAvailable
                         } else {

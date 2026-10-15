@@ -3,6 +3,8 @@
     package="com.brixavier.tskr">
 
     <!-- Permissions required for Alarms and the Full Screen Overlay -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
@@ -67,6 +69,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </receiver>
+
+        <!-- Google Mobile Ads (AdMob) App ID Configuration -->
+        <!-- Injected via Gradle manifestPlaceholders adMobAppId (defaults to Google sample test ID) -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${adMobAppId}" />
 
         <!-- Home Screen Widget -->
         <receiver
