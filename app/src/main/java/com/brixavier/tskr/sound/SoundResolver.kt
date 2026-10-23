@@ -11,7 +11,8 @@ object SoundResolver {
      */
     fun getDefaultSystemUri(type: SoundType): Uri {
         return when (type) {
-            SoundType.NORMAL, SoundType.IMPORTANT -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            SoundType.NORMAL -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            SoundType.IMPORTANT -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
             SoundType.MISSION_MODE -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
         }
     }

@@ -14,7 +14,6 @@ import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -68,6 +67,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.core.content.edit
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -136,6 +137,7 @@ class MainActivity : ComponentActivity() {
     private val isBatteryOptimizationIgnored = mutableStateOf(true)
 
     private var pendingSoundPickerType: SoundType? = null
+    private var returnToPlanIdAfterTaskSheet: String? = null
     private var soundStateVersion by mutableStateOf(0)
 
     private val soundPickerLauncher = registerForActivityResult(
@@ -163,7 +165,7 @@ class MainActivity : ComponentActivity() {
         val store = SharedPreferencesSoundStore(this)
         val currentUri = SoundResolver.resolveSoundUri(this, store, type)
         val pickerType = when (type) {
-            SoundType.MISSION_MODE -> RingtoneManager.TYPE_ALARM
+            SoundType.IMPORTANT, SoundType.MISSION_MODE -> RingtoneManager.TYPE_ALARM
             else -> RingtoneManager.TYPE_NOTIFICATION
         }
 
@@ -257,8 +259,11 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
-        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        WindowCompat.enableEdgeToEdge(window)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = true
+        }
         
         val sharedPref = getSharedPreferences("tsk_r_prefs", MODE_PRIVATE)
         enqueueWidgetUpdate()
@@ -282,6 +287,13 @@ class MainActivity : ComponentActivity() {
                 AppThemeMode.LIGHT -> false
                 AppThemeMode.DARK -> true
                 AppThemeMode.SYSTEM -> isSystemDark
+            }
+
+            SideEffect {
+                WindowInsetsControllerCompat(window, window.decorView).run {
+                    isAppearanceLightStatusBars = !isDark
+                    isAppearanceLightNavigationBars = !isDark
+                }
             }
 
             ReminderAppTheme(darkTheme = isDark) {
@@ -533,6 +545,7 @@ class MainActivity : ComponentActivity() {
                                                 showPlanSheet = true
                                             },
                                             onCreateTaskForPlan = { planId ->
+                                                returnToPlanIdAfterTaskSheet = planId
                                                 selectedPlanId = null
                                                 taskPreselectedPlanId = planId
                                                 initialSheetShow = true
@@ -589,6 +602,8 @@ class MainActivity : ComponentActivity() {
                                                 initialSheetShow = false
                                                 taskPreselectedPlanId = null
                                                 taskPreselectedReminderId = null
+                                                selectedPlanId = returnToPlanIdAfterTaskSheet
+                                                returnToPlanIdAfterTaskSheet = null
                                             }
                                         )
                                     }

@@ -468,7 +468,7 @@ class AlarmActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private fun startAlarmSignals() {
         try {
             val soundStore = SharedPreferencesSoundStore(this)
-            val alarmUri = SoundResolver.resolveSoundUri(this, soundStore, SoundType.MISSION_MODE)
+            val alarmUri = SoundResolver.resolveSoundUri(this, soundStore, SoundType.IMPORTANT)
 
             ringtone = try {
                 RingtoneManager.getRingtone(applicationContext, alarmUri)?.apply {
@@ -826,6 +826,7 @@ fun AlarmScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .navigationBarsPadding()
                 .padding(horizontal = 24.dp, vertical = 32.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,

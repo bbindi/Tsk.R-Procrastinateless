@@ -48,6 +48,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -2943,6 +2945,8 @@ fun AddReminderBottomSheet(
     var planDropdownExpanded by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     fun onPipeAttempt() {
         Toast.makeText(context, "Tsk.R doesn't allow | here. I use that little line to keep your checklist organized.", Toast.LENGTH_SHORT).show()
@@ -3157,7 +3161,11 @@ fun AddReminderBottomSheet(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Surface(
-                            onClick = { showDatePicker = true },
+                            onClick = {
+                                focusManager.clearFocus()
+                                keyboardController?.hide()
+                                showDatePicker = true
+                            },
                             modifier = Modifier
                                 .weight(1f)
                                 .height(54.dp),
@@ -3183,7 +3191,11 @@ fun AddReminderBottomSheet(
                         }
 
                         Surface(
-                            onClick = { showTimePicker = true },
+                            onClick = {
+                                focusManager.clearFocus()
+                                keyboardController?.hide()
+                                showTimePicker = true
+                            },
                             modifier = Modifier
                                 .weight(1f)
                                 .height(54.dp),
@@ -3264,7 +3276,8 @@ fun AddReminderBottomSheet(
                                 .height(48.dp),
                             shape = RoundedCornerShape(14.dp),
                             color = if (isImportantSelected) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            contentColor = if (isImportantSelected) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            contentColor = if (isImportantSelected) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            border = if (isImportantSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.error) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxSize(),
@@ -3285,7 +3298,8 @@ fun AddReminderBottomSheet(
                                 .height(48.dp),
                             shape = RoundedCornerShape(14.dp),
                             color = if (isNormalSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            contentColor = if (isNormalSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            contentColor = if (isNormalSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            border = if (isNormalSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxSize(),

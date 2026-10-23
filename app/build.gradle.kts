@@ -30,45 +30,21 @@ android {
     namespace = "com.brixavier.tskr"
     compileSdk = 37
 
+    val sampleTestAppId = "ca-app-pub-3940256099942544~3347511713"
+    val sampleTestAdUnitId = "ca-app-pub-3940256099942544/2247696110"
+
+    val prodAppIdDefault = "ca-app-pub-1968698168446413~5409238684"
+    val prodAdUnitIdDefault = "ca-app-pub-1968698168446413/7791859443"
+
+    val activeProdAppId = signingProperty("adMobAppId") ?: prodAppIdDefault
+    val activeProdAdUnitId = signingProperty("adMobNativeAdUnitId") ?: prodAdUnitIdDefault
+
     defaultConfig {
         applicationId = "com.brixavier.tskr"
         minSdk = 26
         targetSdk = 37
-        versionCode = 7
-        versionName = "2.1.0"
-
-        val testAppId = "ca-app-pub-3940256099942544~3347511713"
-        val testAdUnitId = "ca-app-pub-3940256099942544/2247696110"
-
-        val rawAdMobAppId = signingProperty("adMobAppId")
-        val rawAdMobNativeAdUnitId = signingProperty("adMobNativeAdUnitId")
-
-        val adMobAppId = if (!rawAdMobAppId.isNullOrBlank()) {
-            val appIdPattern = Regex("^ca-app-pub-\\d{16}~\\d{10}$")
-            if (rawAdMobAppId != testAppId && !appIdPattern.matches(rawAdMobAppId)) {
-                logger.warn("WARNING: adMobAppId format check failed for provided custom property.")
-            }
-            rawAdMobAppId
-        } else {
-            testAppId
-        }
-
-        val adMobNativeAdUnitId = if (!rawAdMobNativeAdUnitId.isNullOrBlank()) {
-            val unitIdPattern = Regex("^ca-app-pub-\\d{16}/\\d{10}$")
-            if (rawAdMobNativeAdUnitId != testAdUnitId && !unitIdPattern.matches(rawAdMobNativeAdUnitId)) {
-                logger.warn("WARNING: adMobNativeAdUnitId format check failed for provided custom property.")
-            }
-            rawAdMobNativeAdUnitId
-        } else {
-            testAdUnitId
-        }
-
-        if (adMobAppId == testAppId || adMobNativeAdUnitId == testAdUnitId) {
-            logger.warn("\n[ADMOB BUILD WARNING] Build is using Google Sample Test AdMob IDs. Supply production adMobAppId and adMobNativeAdUnitId in release-signing.properties or environment variables prior to Google Play Store submission.\n")
-        }
-
-        manifestPlaceholders["adMobAppId"] = adMobAppId
-        buildConfigField("String", "ADMOB_NATIVE_AD_UNIT_ID", "\"$adMobNativeAdUnitId\"")
+        versionCode = 8
+        versionName = "2.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -77,6 +53,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Debug build variant strictly uses Google sample test AdMob IDs
+            manifestPlaceholders["adMobAppId"] = sampleTestAppId
+            buildConfigField("String", "ADMOB_NATIVE_AD_UNIT_ID", "\"$sampleTestAdUnitId\"")
+        }
+
         release {
             val storeFilePath = signingProperty("storeFile")
             val storePassword = signingProperty("storePassword")
@@ -96,6 +78,10 @@ android {
                 this.keyAlias = keyAlias
                 this.keyPassword = keyPassword
             }
+
+            // Release build variant uses production Tsk.R AdMob IDs
+            manifestPlaceholders["adMobAppId"] = activeProdAppId
+            buildConfigField("String", "ADMOB_NATIVE_AD_UNIT_ID", "\"$activeProdAdUnitId\"")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -124,33 +110,34 @@ android {
 
 tasks.register("validateProductionAdMobIds") {
     group = "verification"
-    description = "Strictly validates that production AdMob Application ID and Native Ad Unit ID are configured and valid for production release."
+    description = "Strictly validates that production AdMob Application ID and Native Ad Unit ID match Tsk.R production IDs for release."
 
     doLast {
-        val testAppId = "ca-app-pub-3940256099942544~3347511713"
-        val testAdUnitId = "ca-app-pub-3940256099942544/2247696110"
+        val prodAppIdExpected = "ca-app-pub-1968698168446413~5409238684"
+        val prodAdUnitIdExpected = "ca-app-pub-1968698168446413/7791859443"
 
-        val rawAppId = signingProperty("adMobAppId")
-        val rawAdUnitId = signingProperty("adMobNativeAdUnitId")
+        val sampleTestAppId = "ca-app-pub-3940256099942544~3347511713"
+        val sampleTestAdUnitId = "ca-app-pub-3940256099942544/2247696110"
+
+        val activeAppId = signingProperty("adMobAppId") ?: prodAppIdExpected
+        val activeAdUnitId = signingProperty("adMobNativeAdUnitId") ?: prodAdUnitIdExpected
 
         val appIdPattern = Regex("^ca-app-pub-\\d{16}~\\d{10}$")
         val unitIdPattern = Regex("^ca-app-pub-\\d{16}/\\d{10}$")
 
-        if (rawAppId.isNullOrBlank() || rawAppId == testAppId || !appIdPattern.matches(rawAppId)) {
+        if (activeAppId == sampleTestAppId || !appIdPattern.matches(activeAppId) || activeAppId != prodAppIdExpected) {
             throw GradleException(
-                "PRODUCTION ADMOB ID VALIDATION FAILED: adMobAppId is missing, set to Google's sample test ID, or invalid. " +
-                "Provide a valid production AdMob App ID (ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY) in release-signing.properties or TSKR_ADMOBAPPID."
+                "PRODUCTION ADMOB ID VALIDATION FAILED: Production adMobAppId is invalid or set to test ID. Expected '$prodAppIdExpected'."
             )
         }
 
-        if (rawAdUnitId.isNullOrBlank() || rawAdUnitId == testAdUnitId || !unitIdPattern.matches(rawAdUnitId)) {
+        if (activeAdUnitId == sampleTestAdUnitId || !unitIdPattern.matches(activeAdUnitId) || activeAdUnitId != prodAdUnitIdExpected) {
             throw GradleException(
-                "PRODUCTION ADMOB ID VALIDATION FAILED: adMobNativeAdUnitId is missing, set to Google's sample test ID, or invalid. " +
-                "Provide a valid production Native Ad Unit ID (ca-app-pub-XXXXXXXXXXXXXXXX/ZZZZZZZZZZ) in release-signing.properties or TSKR_ADMOBNATIVEADUNITID."
+                "PRODUCTION ADMOB ID VALIDATION FAILED: Production adMobNativeAdUnitId is invalid or set to test ID. Expected '$prodAdUnitIdExpected'."
             )
         }
 
-        logger.lifecycle("SUCCESS: Production AdMob IDs are valid and configured for release.")
+        logger.lifecycle("SUCCESS: Production AdMob IDs (App ID: $prodAppIdExpected, Native Ad Unit ID: $prodAdUnitIdExpected) are valid and configured for release.")
     }
 }
 
@@ -204,7 +191,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     // Android Core & Standard Testing Libraries
-    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("com.google.android.material:material:1.11.0")
     testImplementation("junit:junit:4.13.2")

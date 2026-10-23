@@ -3,7 +3,6 @@
     <!-- Dark base theme for the app on Android 12+ -->
     <style name="Theme.TskR" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowBackground">@android:color/system_neutral1_900</item>
-        <item name="android:statusBarColor">@android:color/system_neutral1_900</item>
     </style>
 
     <!-- Splash screen theme with dynamic Material You dark background on Android 12+ -->

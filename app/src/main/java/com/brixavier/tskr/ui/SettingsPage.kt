@@ -295,8 +295,7 @@ fun SettingsPage(
                 Column(modifier = Modifier.padding(16.dp)) {
                     val soundList = listOf(
                         Triple(SoundType.NORMAL, "Default Reminder Sound", "Used for Normal priority notifications."),
-                        Triple(SoundType.IMPORTANT, "Important Reminder Sound", "Used for Important priority warning notifications."),
-                        Triple(SoundType.MISSION_MODE, "Mission Mode Alarm Sound", "Used when full-screen Mission Mode activates.")
+                        Triple(SoundType.IMPORTANT, "Important Reminder Sound", "Used for Important priority alerts and Mission Mode.")
                     )
 
                     soundList.forEachIndexed { idx, (soundType, label, desc) ->

@@ -27,7 +27,14 @@ class SharedPreferencesSoundStore(context: Context) : SoundPreferenceStore {
 
     override fun getSoundUri(type: SoundType): String? {
         val key = getKey(type)
-        return prefs.getString(key, null)
+        val storedUri = prefs.getString(key, null)
+        // Older versions kept a separate Mission Mode sound. Reuse it as the
+        // Important alarm sound when no Important sound has been chosen yet.
+        return if (type == SoundType.IMPORTANT && storedUri.isNullOrBlank()) {
+            prefs.getString(KEY_SOUND_MISSION_URI, null) ?: storedUri
+        } else {
+            storedUri
+        }
     }
 
     override fun setSoundUri(type: SoundType, uriString: String?) {
@@ -38,6 +45,7 @@ class SharedPreferencesSoundStore(context: Context) : SoundPreferenceStore {
             } else {
                 putString(key, uriString)
             }
+            if (type == SoundType.IMPORTANT) remove(KEY_SOUND_MISSION_URI)
         }.apply()
     }
 
