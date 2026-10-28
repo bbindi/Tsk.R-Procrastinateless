@@ -12,9 +12,9 @@ class VersionAndReleaseConfigTest {
     }
 
     @Test
-    fun testVersionCode_isEightForInternalTesting() {
-        assertTrue(BuildConfig.VERSION_CODE >= 8)
-        assertEquals(8, BuildConfig.VERSION_CODE)
+    fun testVersionCode_isTwelveForRelease() {
+        assertTrue(BuildConfig.VERSION_CODE >= 12)
+        assertEquals(12, BuildConfig.VERSION_CODE)
     }
 
     @Test

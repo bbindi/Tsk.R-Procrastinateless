@@ -2,7 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.brixavier.tskr">
 
-    <!-- Permissions required for Alarms and the Full Screen Overlay -->
+    <!-- Permissions required for Alarms, AdMob Advertising ID, and Full Screen Overlay -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -57,7 +58,7 @@
             android:enabled="true"
             android:exported="false" />
 
-        <!-- Restores alarms after device reboot -->
+        <!-- Restores alarms after device reboot or app update -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:enabled="true"
@@ -66,6 +67,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </receiver>

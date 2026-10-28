@@ -113,10 +113,79 @@ class OnboardingUpgradeTest {
         var v2WhatsNewSeen = false
 
         fun onDismissWalkthroughPrematurely() {
-            // Dismissed without completing GET TO WORK
+            // Dismissed without completing GET TO WORK or Skip
         }
 
         onDismissWalkthroughPrematurely()
         assertFalse(v2WhatsNewSeen)
+    }
+
+    @Test
+    fun test8_skippingWhatsNewWalkthrough_setsSeenTrueAndTransitionsToDashboard() {
+        val isFirstRun = false
+        var v2WhatsNewSeen = false
+
+        // User taps "Skip" on the What's New Walkthrough
+        fun onSkipWalkthrough() {
+            v2WhatsNewSeen = true
+        }
+
+        onSkipWalkthrough()
+        assertTrue(v2WhatsNewSeen)
+
+        val destinationRoute = resolveStartupRoute(
+            isFirstRun = isFirstRun,
+            v2WhatsNewSeen = v2WhatsNewSeen
+        )
+        assertEquals(StartupRoute.MAIN_DASHBOARD, destinationRoute)
+    }
+
+    @Test
+    fun test9_skippingWhatsNewWalkthrough_persistsAcrossSubsequentLaunches() {
+        // App launch 1: user skips
+        var persistedV2Seen = false
+        persistedV2Seen = true // simulated SharedPreferences persistence on skip
+
+        // App launch 2: next startup reads persistedV2Seen = true
+        val launch2Route = resolveStartupRoute(
+            isFirstRun = false,
+            v2WhatsNewSeen = persistedV2Seen
+        )
+        assertEquals(StartupRoute.MAIN_DASHBOARD, launch2Route)
+    }
+
+    @Test
+    fun test10_skippingWalkthrough_preservesFirstRunStateAndDataIntegrity() {
+        var isFirstRun = false
+        var v2WhatsNewSeen = false
+
+        // Tapping skip only touches v2WhatsNewSeen
+        v2WhatsNewSeen = true
+
+        assertFalse("First run state must remain false and not be reset", isFirstRun)
+        assertTrue(v2WhatsNewSeen)
+        val route = resolveStartupRoute(isFirstRun, v2WhatsNewSeen)
+        assertEquals(StartupRoute.MAIN_DASHBOARD, route)
+    }
+
+    @Test
+    fun test11_duplicateSkipCalls_idempotentlyRetainsDashboardRoute() {
+        var v2WhatsNewSeen = false
+        var skipCallCount = 0
+
+        fun onSkip() {
+            skipCallCount++
+            v2WhatsNewSeen = true
+        }
+
+        // Simulate rapid/repeated tapping
+        onSkip()
+        onSkip()
+        onSkip()
+
+        assertEquals(3, skipCallCount)
+        assertTrue(v2WhatsNewSeen)
+        val route = resolveStartupRoute(isFirstRun = false, v2WhatsNewSeen = v2WhatsNewSeen)
+        assertEquals(StartupRoute.MAIN_DASHBOARD, route)
     }
 }

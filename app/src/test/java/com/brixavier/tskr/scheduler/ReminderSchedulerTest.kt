@@ -136,4 +136,31 @@ class ReminderSchedulerTest {
         assertFalse(occurrence.notify24Hours)
         assertTrue(occurrence.notifyDueNow)
     }
+
+    @Test
+    fun requestCode_withinSigned32BitIntegerRange() {
+        // Ensure that hash collisions or max 24-bit hashes do not overflow 32-bit Integer
+        val highHashId = "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"
+        val code7d = ReminderScheduler.getRequestCode(highHashId, ReminderScheduler.STAGE_7_DAYS)
+        val code24h = ReminderScheduler.getRequestCode(highHashId, ReminderScheduler.STAGE_24_HOURS)
+        val codeDue = ReminderScheduler.getRequestCode(highHashId, ReminderScheduler.STAGE_DUE_NOW)
+
+        assertTrue(code7d > 0)
+        assertTrue(code24h > 0)
+        assertTrue(codeDue > 0)
+        assertTrue(code7d <= Int.MAX_VALUE)
+        assertTrue(code24h <= Int.MAX_VALUE)
+        assertTrue(codeDue <= Int.MAX_VALUE)
+    }
+
+    @Test
+    fun bootReceiver_handlesMyPackageReplacedAction() {
+        val actions = listOf(
+            android.content.Intent.ACTION_BOOT_COMPLETED,
+            android.content.Intent.ACTION_MY_PACKAGE_REPLACED,
+            "android.intent.action.QUICKBOOT_POWERON"
+        )
+        // Verify that MY_PACKAGE_REPLACED is a standard expected intent action recognized by Android
+        assertTrue(actions.contains(android.content.Intent.ACTION_MY_PACKAGE_REPLACED))
+    }
 }

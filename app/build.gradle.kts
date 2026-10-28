@@ -43,7 +43,7 @@ android {
         applicationId = "com.brixavier.tskr"
         minSdk = 26
         targetSdk = 37
-        versionCode = 8
+        versionCode = 12
         versionName = "2.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

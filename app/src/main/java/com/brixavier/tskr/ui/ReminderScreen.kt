@@ -42,9 +42,13 @@ import com.brixavier.tskr.ad.NativeAdEligibility
 import com.brixavier.tskr.ui.TskRPlanIcons
 import com.brixavier.tskr.ui.PlanColorResolver
 import com.brixavier.tskr.ui.theme.TskRMotion
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalDensity
@@ -55,7 +59,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -2999,6 +3007,15 @@ fun AddReminderBottomSheet(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         shape = RoundedCornerShape(16.dp),
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                focusManager.clearFocus(force = true)
+                                keyboardController?.hide()
+                            }
+                        ),
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
                             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -3053,7 +3070,11 @@ fun AddReminderBottomSheet(
                     val selectedPlan = remember(selectedPlanId, plans) { plans.find { it.id == selectedPlanId } }
                     ExposedDropdownMenuBox(
                         expanded = planDropdownExpanded,
-                        onExpandedChange = { planDropdownExpanded = !planDropdownExpanded },
+                        onExpandedChange = {
+                            focusManager.clearFocus(force = true)
+                            keyboardController?.hide()
+                            planDropdownExpanded = !planDropdownExpanded
+                        },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         TextField(
@@ -3156,19 +3177,55 @@ fun AddReminderBottomSheet(
                         }
                     }
 
+                    val dateInteractionSource = remember { MutableInteractionSource() }
+                    val timeInteractionSource = remember { MutableInteractionSource() }
+
+                    val openDatePicker = {
+                        focusManager.clearFocus(force = true)
+                        keyboardController?.hide()
+                        showDatePicker = true
+                    }
+
+                    val openTimePicker = {
+                        focusManager.clearFocus(force = true)
+                        keyboardController?.hide()
+                        showTimePicker = true
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Surface(
-                            onClick = {
-                                focusManager.clearFocus()
-                                keyboardController?.hide()
-                                showDatePicker = true
-                            },
                             modifier = Modifier
                                 .weight(1f)
-                                .height(54.dp),
+                                .height(54.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .indication(dateInteractionSource, ripple())
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onPress = { offset ->
+                                            val press = PressInteraction.Press(offset)
+                                            dateInteractionSource.emit(press)
+                                            if (tryAwaitRelease()) {
+                                                dateInteractionSource.emit(PressInteraction.Release(press))
+                                            } else {
+                                                dateInteractionSource.emit(PressInteraction.Cancel(press))
+                                            }
+                                        },
+                                        onTap = {
+                                            openDatePicker()
+                                        }
+                                    )
+                                }
+                                .semantics {
+                                    role = Role.Button
+                                    contentDescription = "Select Date"
+                                    onClick {
+                                        openDatePicker()
+                                        true
+                                    }
+                                },
                             shape = RoundedCornerShape(16.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
                         ) {
@@ -3179,7 +3236,7 @@ fun AddReminderBottomSheet(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.CalendarToday,
-                                    contentDescription = "Select Date",
+                                    contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp)
                                 )
@@ -3191,14 +3248,35 @@ fun AddReminderBottomSheet(
                         }
 
                         Surface(
-                            onClick = {
-                                focusManager.clearFocus()
-                                keyboardController?.hide()
-                                showTimePicker = true
-                            },
                             modifier = Modifier
                                 .weight(1f)
-                                .height(54.dp),
+                                .height(54.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .indication(timeInteractionSource, ripple())
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onPress = { offset ->
+                                            val press = PressInteraction.Press(offset)
+                                            timeInteractionSource.emit(press)
+                                            if (tryAwaitRelease()) {
+                                                timeInteractionSource.emit(PressInteraction.Release(press))
+                                            } else {
+                                                timeInteractionSource.emit(PressInteraction.Cancel(press))
+                                            }
+                                        },
+                                        onTap = {
+                                            openTimePicker()
+                                        }
+                                    )
+                                }
+                                .semantics {
+                                    role = Role.Button
+                                    contentDescription = "Select Time"
+                                    onClick {
+                                        openTimePicker()
+                                        true
+                                    }
+                                },
                             shape = RoundedCornerShape(16.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
                         ) {
@@ -3209,7 +3287,7 @@ fun AddReminderBottomSheet(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Schedule,
-                                    contentDescription = "Select Time",
+                                    contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp)
                                 )

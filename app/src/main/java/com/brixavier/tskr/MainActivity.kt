@@ -334,6 +334,11 @@ class MainActivity : ComponentActivity() {
                             },
                             onDismiss = {
                                 showWhatsNewReplay = false
+                            },
+                            onSkip = {
+                                sharedPref.edit { putBoolean("v2_whats_new_seen", true) }
+                                v2WhatsNewSeen = true
+                                showWhatsNewReplay = false
                             }
                         )
                     } else {

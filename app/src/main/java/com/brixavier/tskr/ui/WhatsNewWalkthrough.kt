@@ -45,9 +45,25 @@ import com.brixavier.tskr.ui.theme.TskRMotion
 fun WhatsNewWalkthrough(
     isSettingsReplay: Boolean = false,
     onComplete: () -> Unit,
-    onDismiss: () -> Unit = onComplete
+    onDismiss: () -> Unit = onComplete,
+    onSkip: () -> Unit = onComplete
 ) {
     var currentSlide by remember { mutableIntStateOf(0) }
+    var isActionInProgress by remember { mutableStateOf(false) }
+
+    val handleComplete = {
+        if (!isActionInProgress) {
+            isActionInProgress = true
+            onComplete()
+        }
+    }
+
+    val handleSkip = {
+        if (!isActionInProgress) {
+            isActionInProgress = true
+            onSkip()
+        }
+    }
 
     val slides = remember {
         listOf(
@@ -97,7 +113,7 @@ fun WhatsNewWalkthrough(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header / Back Button Bar for Settings Replay
+            // Header / Back Button Bar & Top-Right Skip Button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -110,7 +126,7 @@ fun WhatsNewWalkthrough(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Settings")
                     }
                 } else {
-                    Spacer(modifier = Modifier.width(48.dp))
+                    Spacer(modifier = Modifier.width(64.dp))
                 }
 
                 Text(
@@ -122,7 +138,24 @@ fun WhatsNewWalkthrough(
                     )
                 )
 
-                Spacer(modifier = Modifier.width(48.dp))
+                Box(
+                    modifier = Modifier.width(64.dp),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    TextButton(
+                        onClick = handleSkip,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.height(36.dp)
+                    ) {
+                        Text(
+                            text = "Skip",
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
 
             // Slide Content
@@ -259,7 +292,7 @@ fun WhatsNewWalkthrough(
                         )
 
                         Button(
-                            onClick = onComplete,
+                            onClick = handleComplete,
                             interactionSource = btnInteractionSource,
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(
